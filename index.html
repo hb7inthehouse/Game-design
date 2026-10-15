@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Living Room</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #1b1b1b;
+      color: #eee;
+      font-family: system-ui, sans-serif;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #game {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    canvas { display: block; }
+    #help {
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 13px;
+      background: rgba(0, 0, 0, 0.55);
+      padding: 6px 12px;
+      border-radius: 6px;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    #dpad {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      display: grid;
+      grid-template-columns: repeat(3, 56px);
+      grid-template-rows: repeat(3, 56px);
+      gap: 4px;
+    }
+    #dpad button {
+      background: rgba(0, 0, 0, 0.45);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 10px;
+      font-size: 22px;
+      touch-action: none;
+    }
+    #dpad button.active { background: rgba(255, 255, 255, 0.3); }
+    #dpad .up { grid-column: 2; grid-row: 1; }
+    #dpad .left { grid-column: 1; grid-row: 2; }
+    #dpad .right { grid-column: 3; grid-row: 2; }
+    #dpad .down { grid-column: 2; grid-row: 3; }
+    @media (hover: hover) and (pointer: fine) {
+      #dpad { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game"><canvas id="canvas"></canvas></div>
+  <div id="help">Move: Arrows / WASD &middot; Run: Shift &middot; Hitboxes: H</div>
+  <div id="dpad">
+    <button class="up" data-dir="up">&#9650;</button>
+    <button class="left" data-dir="left">&#9664;</button>
+    <button class="right" data-dir="right">&#9654;</button>
+    <button class="down" data-dir="down">&#9660;</button>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
