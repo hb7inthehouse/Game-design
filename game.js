@@ -161,10 +161,28 @@ window.addEventListener('resize', resize);
 new ResizeObserver(resize).observe(document.getElementById('game'));
 resize();
 
+// Character look: long middle-parted hair (light brown roots fading to blonde),
+// black tee, denim mini skirt, black high-tops with white toe caps, pale blue pendant.
+const LOOK = {
+  skin: '#f3cdb3',
+  skinShade: '#dfae92',
+  hairRoot: '#8b6443',
+  hairEnd: '#e2c08a',
+  hairLine: '#5e4129',
+  tee: '#1d1d20',
+  denim: '#8fb3d6',
+  shoe: '#151515',
+  shoeToe: '#f2f0ea',
+  pendant: '#cfe6f2',
+  outline: '#111',
+};
+
 function drawPlayer() {
   const { x, y, facing, walkTime } = player;
   const r = PLAYER_RADIUS;
   const swing = Math.sin(walkTime * 12) * 0.9;
+  const sway = Math.sin(walkTime * 6) * r * 0.06;
+  const L = LOOK;
 
   ctx.save();
   ctx.translate(x, y);
@@ -176,41 +194,107 @@ function drawPlayer() {
   ctx.fill();
 
   ctx.rotate(facing + Math.PI / 2); // sprite is drawn facing "up"
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = L.outline;
 
-  // Feet (alternate while walking)
-  ctx.fillStyle = '#2b2b2b';
-  ctx.beginPath();
-  ctx.ellipse(-r * 0.4, -swing * r * 0.45, r * 0.22, r * 0.32, 0, 0, Math.PI * 2);
-  ctx.ellipse(r * 0.4, swing * r * 0.45, r * 0.22, r * 0.32, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // High-top sneakers (alternate while walking): black with white toe cap
+  for (const [sx, step] of [[-1, -swing], [1, swing]]) {
+    const fx = sx * r * 0.36;
+    const fy = step * r * 0.5 - r * 0.2;
+    ctx.fillStyle = L.shoe;
+    ctx.beginPath();
+    ctx.ellipse(fx, fy, r * 0.2, r * 0.34, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = L.shoeToe;
+    ctx.beginPath();
+    ctx.ellipse(fx, fy - r * 0.22, r * 0.15, r * 0.11, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
-  // Shoulders / body
-  ctx.fillStyle = '#3d7bd6';
-  ctx.strokeStyle = '#1a1a1a';
-  ctx.lineWidth = 3;
+  // Denim skirt peeking out around the hips
+  ctx.fillStyle = L.denim;
   ctx.beginPath();
-  ctx.ellipse(0, 0, r, r * 0.62, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, r * 0.3, r * 0.74, r * 0.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
-  // Head
-  ctx.fillStyle = '#f0c49a';
+  // Arms swing opposite the feet
+  ctx.fillStyle = L.skin;
+  for (const [sx, step] of [[-1, swing], [1, -swing]]) {
+    ctx.beginPath();
+    ctx.ellipse(sx * r * 0.92, step * r * 0.25 + r * 0.12, r * 0.14, r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Black tee across the shoulders
+  ctx.fillStyle = L.tee;
   ctx.beginPath();
-  ctx.arc(0, -r * 0.08, r * 0.48, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, r * 0.95, r * 0.55, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
-  // Hair (back of head) so facing direction is readable
-  ctx.fillStyle = '#4a2f1d';
+  // Pendant on the chest, just in front of the head
+  ctx.fillStyle = L.pendant;
   ctx.beginPath();
-  ctx.arc(0, -r * 0.08, r * 0.48, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.arc(0, -r * 0.62, r * 0.07, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Long hair down the back and over the shoulders, darker at the roots
+  const hairGrad = ctx.createLinearGradient(0, -r * 0.4, 0, r * 0.85);
+  hairGrad.addColorStop(0, L.hairRoot);
+  hairGrad.addColorStop(1, L.hairEnd);
+  ctx.fillStyle = hairGrad;
+  ctx.strokeStyle = L.hairLine;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.5, -r * 0.2);
+  ctx.bezierCurveTo(-r * 0.62, r * 0.3, -r * 0.45 + sway, r * 0.8, sway, r * 0.86);
+  ctx.bezierCurveTo(r * 0.45 + sway, r * 0.8, r * 0.62, r * 0.3, r * 0.5, -r * 0.2);
   ctx.closePath();
   ctx.fill();
+  ctx.stroke();
+  // Front strands falling over each shoulder
+  for (const sx of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(sx * r * 0.5, -r * 0.12, r * 0.13, r * 0.36, sx * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
 
-  // Nose hint
-  ctx.fillStyle = '#d9a57a';
+  // Head from above: hair with a middle part, forehead and nose showing at the front
+  const hy = -r * 0.1;
+  const hr = r * 0.42;
+  const crownGrad = ctx.createRadialGradient(0, hy, hr * 0.1, 0, hy, hr);
+  crownGrad.addColorStop(0, L.hairRoot);
+  crownGrad.addColorStop(1, '#b8905f');
+  ctx.fillStyle = crownGrad;
   ctx.beginPath();
-  ctx.arc(0, -r * 0.55, r * 0.1, 0, Math.PI * 2);
+  ctx.arc(0, hy, hr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = L.skin;
+  ctx.beginPath();
+  ctx.ellipse(0, hy - hr * 1.02, hr * 0.42, hr * 0.38, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = L.hairLine;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, hy, hr, 0, Math.PI * 2);
+  ctx.stroke();
+  // Middle part, from the forehead back to the crown
+  ctx.beginPath();
+  ctx.moveTo(0, hy - hr * 0.66);
+  ctx.lineTo(0, hy + hr * 0.1);
+  ctx.stroke();
+
+  // Nose tip
+  ctx.fillStyle = L.skinShade;
+  ctx.beginPath();
+  ctx.arc(0, hy - hr * 1.02, r * 0.07, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
