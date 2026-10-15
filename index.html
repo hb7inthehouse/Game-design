@@ -79,6 +79,16 @@
     #dpad .run { grid-column: 2; grid-row: 2; }
     #dpad .right { grid-column: 3; grid-row: 2; }
     #dpad .down { grid-column: 2; grid-row: 3; }
+    #dpad .action {
+      grid-column: 3; grid-row: 3;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--bg);
+    }
+    #dpad .action.active { background: var(--accent); filter: brightness(1.2); transform: scale(0.94); }
+    #dpad .action:disabled { visibility: hidden; }
 
     @media (hover: none), (pointer: coarse) {
       #dpad { display: grid; }
@@ -101,8 +111,8 @@
 </head>
 <body>
   <div id="help">
-    <span class="keys">Move: Arrows / WASD &middot; Run: Shift &middot; Hitboxes: H</span>
-    <span class="touch">Hold the arrows to walk &middot; tap RUN to speed up</span>
+    <span class="keys">Move: Arrows / WASD &middot; Run: Shift &middot; Sit / read: E or Space &middot; Hitboxes: H</span>
+    <span class="touch">Hold the arrows to walk &middot; tap RUN to speed up &middot; walk to the couch to read</span>
   </div>
   <div id="game"><canvas id="canvas"></canvas></div>
   <div id="dpad">
@@ -111,6 +121,7 @@
     <button class="run" id="run" aria-pressed="false">RUN</button>
     <button class="right" data-dir="right" aria-label="Right">&#9654;</button>
     <button class="down" data-dir="down" aria-label="Down">&#9660;</button>
+    <button class="action" id="action" disabled></button>
   </div>
   <script src="game.js"></script>
 </body>

@@ -15,8 +15,9 @@ python3 -m http.server 8000
 
 - **Arrows / WASD**: move
 - **Shift**: run
+- **E / Space**: sit on the couch when you're next to it, then mash it to read (arrows get you up)
 - **H**: show/hide collision boxes
-- **Touch screens**: an on-screen D-pad appears below the map; tap RUN to toggle running.
+- **Touch screens**: an on-screen D-pad appears below the map; tap RUN to toggle running, SIT/READ for the couch.
 
 ## Play on your phone
 
