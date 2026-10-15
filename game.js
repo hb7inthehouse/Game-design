@@ -1,7 +1,7 @@
 // Living Room — a free-roam sandbox on top of the floor-plan image.
 // All world coordinates are in image pixels (the map is 1312 x 1199).
 
-const MAP_SRC = 'assets/living-room.png';
+const MAP_SRC = 'assets/living-room.jpg';
 const MAP_W = 1312;
 const MAP_H = 1199;
 
@@ -27,16 +27,19 @@ const ctx = canvas.getContext('2d');
 const mapImg = new Image();
 mapImg.src = MAP_SRC;
 
+const saved = window.claude?.hot?.data?.player;
 const player = {
-  x: 720,
-  y: 820,
-  facing: -Math.PI / 2, // radians, pointing up
+  x: saved?.x ?? 720,
+  y: saved?.y ?? 820,
+  facing: saved?.facing ?? -Math.PI / 2, // radians, pointing up
   walkTime: 0,
 };
+window.claude?.hot?.snapshot?.(() => ({ player: { x: player.x, y: player.y, facing: player.facing } }));
 
 const keys = new Set();
 const touchDirs = new Set();
 let showHitboxes = false;
+let runToggle = false;
 let scale = 1;
 
 // ---- Input ---------------------------------------------------------------
@@ -72,6 +75,13 @@ document.querySelectorAll('#dpad button').forEach((btn) => {
   btn.addEventListener('pointerup', release);
   btn.addEventListener('pointercancel', release);
   btn.addEventListener('pointerleave', release);
+});
+
+const runBtn = document.getElementById('run');
+runBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  runToggle = !runToggle;
+  runBtn.setAttribute('aria-pressed', String(runToggle));
 });
 
 function heldDirs() {
@@ -114,7 +124,7 @@ function update(dt) {
   }
 
   const len = Math.hypot(dx, dy);
-  const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  const running = runToggle || keys.has('ShiftLeft') || keys.has('ShiftRight');
   const step = (running ? RUN_SPEED : WALK_SPEED) * dt;
   const mx = (dx / len) * step;
   const my = (dy / len) * step;
@@ -131,7 +141,8 @@ function update(dt) {
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
-  scale = Math.min(window.innerWidth / MAP_W, window.innerHeight / MAP_H);
+  const box = document.getElementById('game');
+  scale = Math.min(box.clientWidth / MAP_W, box.clientHeight / MAP_H);
   const cssW = Math.floor(MAP_W * scale);
   const cssH = Math.floor(MAP_H * scale);
   canvas.style.width = cssW + 'px';
@@ -141,6 +152,7 @@ function resize() {
   ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
 }
 window.addEventListener('resize', resize);
+new ResizeObserver(resize).observe(document.getElementById('game'));
 resize();
 
 function drawPlayer() {

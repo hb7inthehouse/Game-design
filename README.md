@@ -16,7 +16,11 @@ python3 -m http.server 8000
 - **Arrows / WASD**: move
 - **Shift**: run
 - **H**: show/hide collision boxes
-- On touch screens an on-screen D-pad appears.
+- **Touch screens**: an on-screen D-pad appears below the map; tap RUN to toggle running.
+
+## Play on your phone
+
+A hosted copy runs inside the Claude app: https://claude.ai/artifact/3jkuJWVcY6zxmnhTQKpsD9
 
 ## Tweaking
 

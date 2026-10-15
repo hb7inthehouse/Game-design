@@ -2,75 +2,115 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Living Room</title>
+  <meta name="claude:viewport-fit-sides" content="cover">
   <style>
-    html, body {
+    /* One-screen game: map fills the space, touch controls sit underneath (or float in landscape). */
+    :root {
+      --bg: #1c1915;
+      --fg: #efe6d8;
+      --muted: #b3a690;
+      --pad-bg: rgba(255, 244, 225, 0.08);
+      --pad-border: rgba(255, 244, 225, 0.28);
+      --pad-active: rgba(255, 244, 225, 0.32);
+      --accent: #d98c4a;
+      --font-ui: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+      color-scheme: dark;
+    }
+    html, body { height: 100%; }
+    body {
       margin: 0;
-      height: 100%;
-      background: #1b1b1b;
-      color: #eee;
-      font-family: system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-ui);
       overflow: hidden;
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      padding-block: 8px;
+      padding-left: max(16px, env(safe-area-inset-left, 0px));
+      padding-right: max(16px, env(safe-area-inset-right, 0px));
+      gap: 8px;
     }
+    #help {
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+    #help .touch { display: none; }
     #game {
-      position: absolute;
-      inset: 0;
+      position: relative;
+      flex: 1;
+      min-height: 0;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    canvas { display: block; }
-    #help {
-      position: absolute;
-      top: 8px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 13px;
-      background: rgba(0, 0, 0, 0.55);
-      padding: 6px 12px;
-      border-radius: 6px;
-      pointer-events: none;
-      white-space: nowrap;
-    }
+    canvas { display: block; border-radius: 6px; }
     #dpad {
-      position: absolute;
-      right: 16px;
-      bottom: 16px;
-      display: grid;
-      grid-template-columns: repeat(3, 56px);
-      grid-template-rows: repeat(3, 56px);
-      gap: 4px;
+      display: none;
+      align-self: center;
+      grid-template-columns: repeat(3, 64px);
+      grid-template-rows: repeat(3, 64px);
+      gap: 6px;
+      padding-bottom: 8px;
     }
     #dpad button {
-      background: rgba(0, 0, 0, 0.45);
-      color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.35);
-      border-radius: 10px;
-      font-size: 22px;
+      background: var(--pad-bg);
+      color: var(--fg);
+      border: 1px solid var(--pad-border);
+      border-radius: 14px;
+      font: 600 22px var(--font-ui);
       touch-action: none;
+      padding: 0;
     }
-    #dpad button.active { background: rgba(255, 255, 255, 0.3); }
+    #dpad button.active { background: var(--pad-active); }
+    #dpad .run { font-size: 13px; letter-spacing: 0.06em; }
+    #dpad .run[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
     #dpad .up { grid-column: 2; grid-row: 1; }
     #dpad .left { grid-column: 1; grid-row: 2; }
+    #dpad .run { grid-column: 2; grid-row: 2; }
     #dpad .right { grid-column: 3; grid-row: 2; }
     #dpad .down { grid-column: 2; grid-row: 3; }
-    @media (hover: hover) and (pointer: fine) {
-      #dpad { display: none; }
+
+    @media (hover: none), (pointer: coarse) {
+      #dpad { display: grid; }
+      #help .keys { display: none; }
+      #help .touch { display: inline; }
+    }
+    /* Landscape phones: float the pad over the bottom-right corner so the map keeps its height. */
+    @media ((hover: none), (pointer: coarse)) and (orientation: landscape) {
+      #dpad {
+        position: fixed;
+        right: calc(12px + env(safe-area-inset-right, 0px));
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+        grid-template-columns: repeat(3, 52px);
+        grid-template-rows: repeat(3, 52px);
+        padding-bottom: 0;
+        opacity: 0.85;
+      }
     }
   </style>
 </head>
 <body>
+  <div id="help">
+    <span class="keys">Move: Arrows / WASD &middot; Run: Shift &middot; Hitboxes: H</span>
+    <span class="touch">Hold the arrows to walk &middot; tap RUN to speed up</span>
+  </div>
   <div id="game"><canvas id="canvas"></canvas></div>
-  <div id="help">Move: Arrows / WASD &middot; Run: Shift &middot; Hitboxes: H</div>
   <div id="dpad">
-    <button class="up" data-dir="up">&#9650;</button>
-    <button class="left" data-dir="left">&#9664;</button>
-    <button class="right" data-dir="right">&#9654;</button>
-    <button class="down" data-dir="down">&#9660;</button>
+    <button class="up" data-dir="up" aria-label="Up">&#9650;</button>
+    <button class="left" data-dir="left" aria-label="Left">&#9664;</button>
+    <button class="run" id="run" aria-pressed="false">RUN</button>
+    <button class="right" data-dir="right" aria-label="Right">&#9654;</button>
+    <button class="down" data-dir="down" aria-label="Down">&#9660;</button>
   </div>
   <script src="game.js"></script>
 </body>
