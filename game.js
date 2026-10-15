@@ -5,6 +5,10 @@ const MAP_SRC = 'assets/living-room.jpg';
 const MAP_W = 1312;
 const MAP_H = 1199;
 
+// The ceiling fan cut out of the map, drawn over the player so they walk beneath it.
+const FAN_SRC = 'assets/ceiling-fan.png';
+const FAN_POS = { x: 535, y: 503 };
+
 // Walkable floor area (inside the walls).
 const FLOOR = { x: 205, y: 205, w: 940, h: 920 };
 
@@ -26,6 +30,8 @@ const ctx = canvas.getContext('2d');
 
 const mapImg = new Image();
 mapImg.src = MAP_SRC;
+const fanImg = new Image();
+fanImg.src = FAN_SRC;
 
 const saved = window.claude?.hot?.data?.player;
 const player = {
@@ -232,6 +238,9 @@ function render() {
     ctx.drawImage(mapImg, 0, 0, MAP_W, MAP_H);
   }
   drawPlayer();
+  if (fanImg.complete && fanImg.naturalWidth) {
+    ctx.drawImage(fanImg, FAN_POS.x, FAN_POS.y);
+  }
   if (showHitboxes) drawHitboxes();
 }
 
