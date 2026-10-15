@@ -23,6 +23,8 @@ python3 -m http.server 8000
 
 A hosted copy runs inside the Claude app: https://claude.ai/artifact/3jkuJWVcY6zxmnhTQKpsD9
 
+Her dog tags along behind her and hops up to lie beside her whenever she sits down to read.
+
 ## Tweaking
 
 Everything lives in `game.js`. Walls are the `FLOOR` rectangle and furniture is in `OBSTACLES`, both in map-image pixels (1312 x 1199). Press **H** in-game to see them.
