@@ -336,6 +336,26 @@ herFront.src = 'assets/her-front.png';
 const herBack = new Image();
 herBack.src = 'assets/her-back.png';
 
+// Walking uses the same art split into layers, side by side in one image:
+// body (no arms or legs), left arm, right arm, legs. Each layer is HER.w wide.
+const PARTS = { body: 0, armL: 1, armR: 2, legs: 3 };
+const herFrontParts = new Image();
+herFrontParts.src = 'assets/her-front-parts.png';
+const herBackParts = new Image();
+herBackParts.src = 'assets/her-back-parts.png';
+
+// Walk cycle, in sprite px. One full cycle is two steps.
+const WALK = {
+  speed: 9, // cycle speed (radians per second of walkTime)
+  kneeY: 252, // legs bend here: the shin lifts more than the thigh
+  shinLift: 15,
+  thighLift: 5,
+  stepIn: 1.5, // a lifted foot tucks slightly toward the middle
+  bob: 3, // body rises as each foot passes
+  sway: 2, // hips shift over the planted foot
+  armSwing: 5, // arms swing opposite the legs
+};
+
 const BOOK = {
   cover: '#2f6f73',
   coverDark: '#24585b',
@@ -367,39 +387,58 @@ function drawUpperBody(img, dy) {
   }
 }
 
+// Draw a piece of one layer from the parts image, offset by (dx, dy).
+function part(img, layer, sx, sy, sw, sh, dx, dy) {
+  ctx.drawImage(img, layer * HER.w + sx, sy, sw, sh, sx + dx, sy + dy, sw, sh);
+}
+
+function drawLegWalking(img, x0, w, lift, inward) {
+  const top = HER.hemY - 12;
+  const dx = inward * lift * WALK.stepIn;
+  // Shin first, then the thigh over its top, so a lifted leg reads as a bent knee.
+  part(img, PARTS.legs, x0, WALK.kneeY, w, HER.h - WALK.kneeY, dx, -lift * WALK.shinLift);
+  part(img, PARTS.legs, x0, top, w, WALK.kneeY - top + 2, dx * 0.5, -lift * WALK.thighLift);
+}
+
 function drawPlayer() {
   if (player.seat) {
     drawSeated(player.seat);
     return;
   }
-  const img = spriteView(player.facing) === 'back' ? herBack : herFront;
+  const back = spriteView(player.facing) === 'back';
+  const img = back ? herBackParts : herFrontParts;
   if (!spriteReady(img)) return;
 
   const moving = player.walkTime > 0;
-  const phase = Math.sin(player.walkTime * 11);
-  const lift = 5; // sprite px a stepping foot rises
-  const liftL = moving ? Math.max(0, phase) * lift : 0;
-  const liftR = moving ? Math.max(0, -phase) * lift : 0;
-  const bob = moving ? -Math.abs(phase) * 2 : 0;
+  const s = moving ? Math.sin(player.walkTime * WALK.speed) : 0;
+  // Ease the lift so feet stay planted a little longer before rising.
+  const liftL = Math.pow(Math.max(0, s), 1.4);
+  const liftR = Math.pow(Math.max(0, -s), 1.4);
+  const bob = -WALK.bob * Math.abs(s);
+  const sway = -WALK.sway * s;
 
   ctx.save();
   ctx.translate(player.x, player.y);
 
+  // Shadow narrows a touch while a foot is up
   ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
   ctx.beginPath();
-  ctx.ellipse(0, 0, 22, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 22 - Math.abs(s) * 2, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.scale(HER.scale, HER.scale);
   ctx.translate(-HER.centerX, -HER.h);
   ctx.imageSmoothingQuality = 'high';
 
-  // Legs from just under the skirt down; each side lifts in turn.
-  const legTop = HER.hemY - 12;
   const half = HER.legs.w / 2;
-  blit(img, HER.legs.x, legTop, half, HER.h - legTop, legTop - liftL);
-  blit(img, HER.legs.x + half, legTop, half, HER.h - legTop, legTop - liftR);
-  drawUpperBody(img, bob);
+  drawLegWalking(img, HER.legs.x, half, liftL, 1);
+  drawLegWalking(img, HER.legs.x + half, half, liftR, -1);
+
+  // Each arm swings opposite its leg; seen from behind, sides swap.
+  const swingL = WALK.armSwing * s * (back ? -1 : 1);
+  part(img, PARTS.armL, 0, 0, HER.w, HER.h, sway, bob + swingL);
+  part(img, PARTS.armR, 0, 0, HER.w, HER.h, sway, bob - swingL);
+  part(img, PARTS.body, 0, 0, HER.w, HER.h, sway, bob);
 
   ctx.restore();
 }
@@ -959,10 +998,12 @@ function render() {
   if (mapImg.complete && mapImg.naturalWidth) {
     ctx.drawImage(mapImg, 0, 0, MAP_W, MAP_H);
   }
+  // The fan hangs over the room, but one blade tip reaches the front of the couch;
+  // while she's seated there, draw it underneath so it doesn't hide her feet.
+  const fanReady = fanImg.complete && fanImg.naturalWidth;
+  if (fanReady && player.seat) ctx.drawImage(fanImg, FAN_POS.x, FAN_POS.y);
   drawActors();
-  if (fanImg.complete && fanImg.naturalWidth) {
-    ctx.drawImage(fanImg, FAN_POS.x, FAN_POS.y);
-  }
+  if (fanReady && !player.seat) ctx.drawImage(fanImg, FAN_POS.x, FAN_POS.y);
   if (showHitboxes) drawHitboxes();
   drawHud();
 }
