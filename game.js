@@ -49,6 +49,11 @@ const ROOMS = {
         x: 622, y: 712, view: 'back', approach: { x: 622, y: 588 },
         dog: { x: 560, y: 722, flip: false, ground: { x: 560, y: 588 } },
       },
+      {
+        // The chaise end of the couch, facing the kitchen
+        x: 300, y: 590, view: 'right', approach: { x: 398, y: 568 },
+        dog: { x: 300, y: 532, flip: false, ground: { x: 398, y: 520 } },
+      },
     ],
     doors: [
       {
@@ -81,7 +86,13 @@ const ROOMS = {
       { name: 'mirror', x: 922, y: 808, w: 128, h: 160 },
       { name: 'plant (right)', x: 918, y: 945, w: 107, h: 105 },
     ],
-    seats: [],
+    seats: [
+      {
+        // Foot of the bed, facing the viewer
+        x: 452, y: 668, view: 'front', approach: { x: 452, y: 712 },
+        dog: { x: 560, y: 655, flip: true, ground: { x: 560, y: 712 } },
+      },
+    ],
     doors: [
       {
         to: 'apartment', label: 'EXIT', prompt: 'go back out',
@@ -119,6 +130,13 @@ const player = {
   facing: saved?.facing ?? Math.PI / 2, // radians; starts facing down, toward the viewer
   walkTime: 0,
   seat: null, // one of the room's seats while sitting
+  stride: 0, // distance walked, drives the walk-cycle frame
+  moveDx: 0, // direction of the last step
+  moveDy: 0,
+  idleTime: 0, // how long she's been standing still
+  wave: 0, // countdown while waving at him
+  cheer: 0, // countdown for the happy pose after a full kiss bar
+  nearHim: false,
 };
 // Pick up where she was after a live update, if that spot is still on the floor.
 if (saved && isFree(saved.x, saved.y)) {
@@ -146,6 +164,7 @@ const reading = {
   chapters: window.claude?.hot?.data?.chapters ?? loadChapters(),
   popTime: 0, // counts down while "Chapter Complete" shows
   flipTime: 0, // page-flip animation after each press
+  sinceTurn: 0, // seconds since the last page turn
 };
 
 window.claude?.hot?.snapshot?.(() => ({
@@ -326,6 +345,7 @@ function action() {
     if (reading.popTime > CHAPTER_POP_TIME - 0.5) return; // brief pause after a chapter
     reading.progress = Math.min(1, reading.progress + READ_PER_PRESS);
     reading.flipTime = 0.25;
+    reading.sinceTurn = 0;
     if (reading.progress >= 1) {
       reading.chapters += 1;
       saveChapters(reading.chapters);
@@ -390,6 +410,13 @@ function update(dt) {
 function updatePlayer(dt) {
   reading.popTime = Math.max(0, reading.popTime - dt);
   reading.flipTime = Math.max(0, reading.flipTime - dt);
+  reading.sinceTurn = player.seat ? reading.sinceTurn + dt : 0;
+  player.wave = Math.max(0, player.wave - dt);
+  player.cheer = Math.max(0, player.cheer - dt);
+  // Wave hello when she walks up to him
+  const near = room.id === 'apartment' && nearHim();
+  if (near && !player.nearHim && kiss.cooldown <= 0) player.wave = WAVE_TIME;
+  player.nearHim = near;
   updateActionButton();
 
   const dirs = heldDirs();
@@ -401,6 +428,7 @@ function updatePlayer(dt) {
   if (dirs.has('down')) dy += 1;
 
   if (player.seat) {
+    player.idleTime = 0;
     if (dx === 0 && dy === 0) {
       reading.progress = Math.max(0, reading.progress - READ_DECAY * dt);
       return;
@@ -410,8 +438,13 @@ function updatePlayer(dt) {
 
   if (dx === 0 && dy === 0) {
     player.walkTime = 0;
+    player.idleTime += dt;
     return;
   }
+  player.idleTime = 0;
+  player.wave = 0;
+  player.moveDx = dx;
+  player.moveDy = dy;
 
   const len = Math.hypot(dx, dy);
   const running = runToggle || keys.has('ShiftLeft') || keys.has('ShiftRight');
@@ -422,6 +455,7 @@ function updatePlayer(dt) {
   // Move each axis separately so the player slides along walls/furniture.
   if (isFree(player.x + mx, player.y)) player.x += mx;
   if (isFree(player.x, player.y + my)) player.y += my;
+  player.stride += step / room.scale;
 
   player.facing = Math.atan2(dy, dx);
   player.walkTime += dt * (running ? 1.8 : 1);
@@ -476,232 +510,175 @@ new ResizeObserver(resize).observe(document.getElementById('game'));
 resize();
 
 // ---- Character -------------------------------------------------------------
-// Pixel-art sprite cut from the character art. The front image is the original;
-// the back image is the same art with her hair painted over the front.
-// Walking slices the legs off and steps them; sitting drops the thighs so her
-// knees sit right under the skirt hem.
-// Sprite coordinates below are pixels in the sprite images (118 x 344).
+// Pixel-art sprites cut from her character sheets (assets/her.png), stored at
+// 2 image px per map px. Each pose has an anchor: her feet for standing poses,
+// the seat (bottom of her shorts) for couch poses. Poses that only exist facing
+// one way are mirrored for the other side.
 
-const HER = {
-  w: 118,
-  h: 344,
-  scale: 0.5, // sprite px -> map px (she stands 172 map px tall)
-  centerX: 59,
-  hemY: 212, // bottom of the skirt's frayed hem
-  kneeY: 236, // top of the knees (where the seated pose picks up)
-  legs: { x: 22, w: 74 }, // columns that hold only legs below the hem
-  hands: [{ x: 0, w: 24 }, { x: 94, w: 24 }], // hands hang a little below the hem
-  handsBottom: 222,
+const herImg = new Image();
+herImg.src = 'assets/her.png';
+const HER_FRAMES = {
+  front: { r: [0, 0, 118, 344], ax: 57, ay: 344, hem: 210 },
+  frontRight: { r: [120, 0, 104, 344], ax: 44, ay: 344 },
+  right: { r: [226, 0, 90, 342], ax: 54, ay: 342 },
+  backRight: { r: [318, 0, 101, 342], ax: 54, ay: 342 },
+  back: { r: [421, 0, 113, 342], ax: 56, ay: 342, hem: 210 },
+  backLeft: { r: [536, 0, 101, 342], ax: 45, ay: 342 },
+  walk1: { r: [639, 0, 167, 320], ax: 88, ay: 320 },
+  walk2: { r: [808, 0, 170, 320], ax: 89, ay: 320 },
+  walk3: { r: [980, 0, 186, 320], ax: 98, ay: 320 },
+  walk4: { r: [1168, 0, 198, 320], ax: 105, ay: 320 },
+  walk5: { r: [1368, 0, 161, 320], ax: 85, ay: 320 },
+  walk6: { r: [1531, 0, 184, 320], ax: 96, ay: 320 },
+  walk7: { r: [1717, 0, 197, 320], ax: 102, ay: 320 },
+  walk8: { r: [0, 346, 190, 320], ax: 101, ay: 320 },
+  walk9: { r: [192, 346, 195, 320], ax: 104, ay: 320 },
+  idle: { r: [389, 346, 118, 344], ax: 58, ay: 344 },
+  happy: { r: [509, 346, 138, 344], ax: 81, ay: 344 },
+  peace: { r: [649, 346, 150, 344], ax: 92, ay: 344 },
+  armsCrossed: { r: [801, 346, 108, 344], ax: 52, ay: 344 },
+  phone: { r: [911, 346, 131, 344], ax: 57, ay: 344 },
+  backpack: { r: [1044, 346, 112, 343], ax: 55, ay: 343 },
+  wave: { r: [1158, 346, 167, 343], ax: 56, ay: 343 },
+  floorSit: { r: [1327, 346, 141, 206], ax: 74, ay: 206 },
+  couchFront: { r: [1470, 346, 136, 272], ax: 58, ay: 188 },
+  couchFrontRight: { r: [1608, 346, 174, 272], ax: 24, ay: 194 },
+  couchRight: { r: [1784, 346, 187, 270], ax: 33, ay: 199 },
+  couchBack: { r: [0, 692, 117, 195], ax: 56, ay: 190 },
+  couchBackLeft: { r: [119, 692, 168, 259], ax: 127, ay: 188 },
 };
+const HER_WALK = ['walk1', 'walk2', 'walk3', 'walk4', 'walk5', 'walk6', 'walk7', 'walk8', 'walk9'];
+const HER_STEP = 10; // map px travelled per walk frame
+const HER_LEG_LIFT = 14; // sprite px a foot rises when walking straight up or down
 
-const herFront = new Image();
-herFront.src = 'assets/her-front.png';
-const herBack = new Image();
-herBack.src = 'assets/her-back.png';
-
-// Walking uses the same art split into layers, side by side in one image:
-// body (no arms or legs), left arm, right arm, legs. Each layer is HER.w wide.
-const PARTS = { body: 0, armL: 1, armR: 2, legs: 3 };
-const herFrontParts = new Image();
-herFrontParts.src = 'assets/her-front-parts.png';
-const herBackParts = new Image();
-herBackParts.src = 'assets/her-back-parts.png';
-
-// Walk cycle, in sprite px. One full cycle is two steps.
-const WALK = {
-  speed: 9, // cycle speed (radians per second of walkTime)
-  kneeY: 252, // legs bend here: the shin lifts more than the thigh
-  shinLift: 15,
-  thighLift: 5,
-  stepIn: 1.5, // a lifted foot tucks slightly toward the middle
-  bob: 3, // body rises as each foot passes
-  sway: 2, // hips shift over the planted foot
-  armSwing: 5, // arms swing opposite the legs
-};
-
-const BOOK = {
-  cover: '#2f6f73',
-  coverDark: '#24585b',
-  page: '#fbf6ea',
-  pageShade: '#e6dcc6',
-  text: '#b9ae98',
-  outline: '#140c06',
-};
-
-function spriteView(facing) {
-  // The art is front-facing; walking up shows her back, everything else her front.
-  return Math.sin(facing) < -0.7 ? 'back' : 'front';
-}
+// Idle routine: after a short pause she strikes a pose now and then, and after a
+// long wait she sits down on the floor.
+const IDLE_POSE_AFTER = 4;
+const IDLE_POSE_EVERY = 6; // seconds per cycle once posing starts
+const IDLE_POSE_HOLD = 3.5; // seconds of each cycle spent in the pose
+const IDLE_POSES = ['happy', 'peace', 'armsCrossed', 'phone', 'idle'];
+const FLOOR_SIT_AFTER = 28;
+const WAVE_TIME = 1.6;
+const CHEER_TIME = 2.2;
+const GLANCE_AFTER = 4; // seconds without a page turn before she looks at the dog
 
 function spriteReady(img) {
   return img.complete && img.naturalWidth > 0;
 }
 
-// Copy a horizontal band of the sprite: rows [sy, sy + sh) of columns [sx, sx + sw)
-// drawn at sprite coordinates (sx, dy).
-function blit(img, sx, sy, sw, sh, dy) {
-  ctx.drawImage(img, sx, sy, sw, sh, sx, dy, sw, sh);
-}
-
-function drawUpperBody(img, dy) {
-  blit(img, 0, 0, HER.w, HER.hemY, dy);
-  for (const hand of HER.hands) {
-    blit(img, hand.x, HER.hemY, hand.w, HER.handsBottom - HER.hemY, HER.hemY + dy);
+// Standing pose for a facing angle (8 directions). Left-facing poses mirror
+// their right-facing twins.
+function standingPose(facing) {
+  const oct = Math.round(facing / (Math.PI / 4));
+  switch (((oct % 8) + 8) % 8) {
+    case 0: return { name: 'right' };
+    // The three-quarter front art looks toward the viewer's left, so mirror it for down-right.
+    case 1: return { name: 'frontRight', mirror: true };
+    case 2: return { name: 'front' };
+    case 3: return { name: 'frontRight' };
+    case 4: return { name: 'right', mirror: true };
+    case 5: return { name: 'backLeft' };
+    case 6: return { name: 'back' };
+    default: return { name: 'backRight' };
   }
 }
 
-// Draw a piece of one layer from the parts image, offset by (dx, dy).
-function part(img, layer, sx, sy, sw, sh, dx, dy) {
-  ctx.drawImage(img, layer * HER.w + sx, sy, sw, sh, sx + dx, sy + dy, sw, sh);
+// Which way is she looking when she faces mostly away from the viewer?
+function facingAway(facing) {
+  return Math.sin(facing) < -0.38;
 }
 
-function drawLegWalking(img, x0, w, lift, inward) {
-  const top = HER.hemY - 12;
-  const dx = inward * lift * WALK.stepIn;
-  // Shin first, then the thigh over its top, so a lifted leg reads as a bent knee.
-  part(img, PARTS.legs, x0, WALK.kneeY, w, HER.h - WALK.kneeY, dx, -lift * WALK.shinLift);
-  part(img, PARTS.legs, x0, top, w, WALK.kneeY - top + 2, dx * 0.5, -lift * WALK.thighLift);
+function playerPose() {
+  if (player.seat) return seatedPose(player.seat);
+  if (player.walkTime > 0) {
+    if (player.moveDx !== 0) {
+      const frame = HER_WALK[Math.floor(player.stride / HER_STEP) % HER_WALK.length];
+      return { name: frame, mirror: player.moveDx < 0 };
+    }
+    return { name: player.moveDy < 0 ? 'back' : 'front', stepping: true };
+  }
+  if (player.cheer > 0) return { name: 'happy' };
+  if (player.wave > 0) return { name: 'wave', mirror: HIM.x < player.x };
+  const t = player.idleTime;
+  if (t > FLOOR_SIT_AFTER) return { name: 'floorSit' };
+  if (t > IDLE_POSE_AFTER) {
+    const cycle = Math.floor((t - IDLE_POSE_AFTER) / IDLE_POSE_EVERY);
+    const inPose = (t - IDLE_POSE_AFTER) % IDLE_POSE_EVERY < IDLE_POSE_HOLD;
+    if (inPose) {
+      // Facing away, she alternates between showing her backpack and turning around
+      if (facingAway(player.facing) && cycle % 2 === 0) return { name: 'backpack' };
+      return { name: IDLE_POSES[(cycle * 3 + 1) % IDLE_POSES.length] };
+    }
+  }
+  return standingPose(player.facing);
+}
+
+// On a seat she faces the way the seat faces, glances at the dog when she
+// stops turning pages, and turns to the viewer when she finishes a chapter.
+function seatedPose(seat) {
+  const dogLeft = dog.x < seat.x;
+  const celebrating = reading.popTime > 0;
+  const glancing = !celebrating && reading.sinceTurn > GLANCE_AFTER && dog.state === 'couch';
+  if (seat.view === 'back') {
+    if (celebrating) return { name: 'couchFront' };
+    if (glancing) return { name: 'couchBackLeft', mirror: !dogLeft };
+    return { name: 'couchBack' };
+  }
+  if (seat.view === 'front') {
+    if (glancing) return { name: 'couchFrontRight', mirror: dogLeft };
+    return { name: 'couchFront' };
+  }
+  const left = seat.view === 'left';
+  if (celebrating) return { name: 'couchFrontRight', mirror: left };
+  return { name: 'couchRight', mirror: left };
+}
+
+// Draw part of a pose: [sx, sy, sw, sh] within the pose, at sprite offset (dx, dy).
+function blitHer(f, sx, sy, sw, sh, dx, dy) {
+  ctx.drawImage(herImg, f.r[0] + sx, f.r[1] + sy, sw, sh, sx - f.ax + dx, sy - f.ay + dy, sw, sh);
 }
 
 function drawPlayer() {
-  if (player.seat) {
-    drawSeated(player.seat);
-    return;
-  }
-  const back = spriteView(player.facing) === 'back';
-  const img = back ? herBackParts : herFrontParts;
-  if (!spriteReady(img)) return;
-
-  const moving = player.walkTime > 0;
-  const s = moving ? Math.sin(player.walkTime * WALK.speed) : 0;
-  // Ease the lift so feet stay planted a little longer before rising.
-  const liftL = Math.pow(Math.max(0, s), 1.4);
-  const liftR = Math.pow(Math.max(0, -s), 1.4);
-  const bob = -WALK.bob * Math.abs(s);
-  const sway = -WALK.sway * s;
+  if (!spriteReady(herImg)) return;
+  const pose = playerPose();
+  const f = HER_FRAMES[pose.name];
+  const at = player.seat ?? player;
+  const [, , w, h] = f.r;
 
   ctx.save();
-  ctx.translate(player.x, player.y);
+  ctx.translate(at.x, at.y);
   ctx.scale(room.scale, room.scale);
-
-  // Shadow narrows a touch while a foot is up
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 22 - Math.abs(s) * 2, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.scale(HER.scale, HER.scale);
-  ctx.translate(-HER.centerX, -HER.h);
-  ctx.imageSmoothingQuality = 'high';
-
-  const half = HER.legs.w / 2;
-  drawLegWalking(img, HER.legs.x, half, liftL, 1);
-  drawLegWalking(img, HER.legs.x + half, half, liftR, -1);
-
-  // Each arm swings opposite its leg; seen from behind, sides swap.
-  const swingL = WALK.armSwing * s * (back ? -1 : 1);
-  part(img, PARTS.armL, 0, 0, HER.w, HER.h, sway, bob + swingL);
-  part(img, PARTS.armR, 0, 0, HER.w, HER.h, sway, bob - swingL);
-  part(img, PARTS.body, 0, 0, HER.w, HER.h, sway, bob);
-
-  ctx.restore();
-}
-
-// Sitting facing the viewer: hem on the seat, knees just below, shins hanging.
-function drawSeated(seat) {
-  if (seat.view === 'back') {
-    drawSeatedBack(seat);
-    return;
-  }
-  if (!spriteReady(herFront)) return;
-  ctx.save();
-  ctx.translate(seat.x, seat.y);
-  ctx.scale(room.scale, room.scale);
-  ctx.scale(HER.scale, HER.scale);
-  ctx.translate(-HER.centerX, -HER.hemY);
-  ctx.imageSmoothingQuality = 'high';
-
-  blit(herFront, HER.legs.x, HER.kneeY, HER.legs.w, HER.h - HER.kneeY, HER.hemY - 4);
-  drawUpperBody(herFront, 0);
-  drawOpenBook(HER.centerX, 192);
-  ctx.restore();
-}
-
-// Sitting facing away (the couch faces the TV): her back to the viewer, hem on
-// the cushion, legs and book out of sight in front of her.
-function drawSeatedBack(seat) {
-  if (!spriteReady(herBack)) return;
-  ctx.save();
-  ctx.translate(seat.x, seat.y);
-  ctx.scale(room.scale, room.scale);
-  ctx.scale(HER.scale, HER.scale);
-  ctx.translate(-HER.centerX, -HER.hemY);
-  ctx.imageSmoothingQuality = 'high';
-  // Settle a pixel or two each time she turns a page
-  const nudge = reading.flipTime > 0 ? Math.sin((reading.flipTime / 0.25) * Math.PI) * 2 : 0;
-  drawUpperBody(herBack, nudge);
-  ctx.restore();
-}
-
-// Open book resting on her lap, in sprite px. A page flips after each press.
-function drawOpenBook(cx, cy) {
-  const B = BOOK;
-  const w = 31; // width of one page
-  const h = 24;
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = B.outline;
-
-  // Cover peeking out around the pages
-  ctx.fillStyle = B.cover;
-  ctx.beginPath();
-  ctx.rect(cx - w - 3, cy - h / 2 - 2, w * 2 + 6, h + 5);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = B.coverDark;
-  ctx.fillRect(cx - w - 2, cy + h / 2, w * 2 + 4, 2);
-
-  // Two pages
-  for (const s of [-1, 1]) {
-    ctx.fillStyle = B.page;
+  if (!player.seat) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
     ctx.beginPath();
-    ctx.moveTo(cx, cy - h / 2 + 2);
-    ctx.lineTo(cx + s * w, cy - h / 2);
-    ctx.lineTo(cx + s * w, cy + h / 2);
-    ctx.lineTo(cx, cy + h / 2 + 1);
-    ctx.closePath();
+    ctx.ellipse(0, 0, pose.name === 'floorSit' ? 32 : 22, 6, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-    // Lines of text
-    ctx.fillStyle = B.text;
-    for (let i = 0; i < 5; i++) {
-      const ly = cy - h / 2 + 4 + i * 3.5;
-      const x0 = s < 0 ? cx - w + 4 : cx + 4;
-      ctx.fillRect(x0, ly, w - 8 - (i === 4 ? 8 : 0), 1.5);
-    }
   }
-  // Gutter shadow
-  ctx.fillStyle = B.pageShade;
-  ctx.fillRect(cx - 1, cy - h / 2 + 2, 2, h - 1);
+  ctx.scale(pose.mirror ? -0.5 : 0.5, 0.5);
+  ctx.imageSmoothingQuality = 'high';
 
-  if (reading.flipTime > 0) {
-    const t = reading.flipTime / 0.25; // 1 -> 0
-    ctx.save();
-    ctx.translate(cx, 0);
-    ctx.scale(Math.cos((1 - t) * Math.PI), 1);
-    ctx.fillStyle = B.page;
-    ctx.beginPath();
-    ctx.moveTo(0, cy - h / 2 + 2);
-    ctx.lineTo(w, cy - h / 2 - 3 * Math.sin(t * Math.PI));
-    ctx.lineTo(w, cy + h / 2 - 3 * Math.sin(t * Math.PI));
-    ctx.lineTo(0, cy + h / 2 + 1);
-    ctx.closePath();
-    ctx.fill();
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-    ctx.restore();
+  if (pose.stepping) {
+    // Walking straight toward or away from the viewer: step each leg in turn.
+    const s = Math.sin(player.stride / HER_STEP * Math.PI / 2);
+    const liftL = Math.max(0, s) * HER_LEG_LIFT;
+    const liftR = Math.max(0, -s) * HER_LEG_LIFT;
+    const bob = -Math.abs(s) * 3;
+    const legTop = f.hem - 16;
+    blitHer(f, 0, legTop, f.ax, h - legTop, 0, -liftL);
+    blitHer(f, f.ax, legTop, w - f.ax, h - legTop, 0, -liftR);
+    blitHer(f, 0, 0, w, f.hem, 0, bob);
+  } else {
+    // A small settle each time she turns a page
+    const nudge = player.seat && reading.flipTime > 0 ? Math.sin((reading.flipTime / 0.25) * Math.PI) * 3 : 0;
+    blitHer(f, 0, 0, w, h, 0, nudge);
   }
+  ctx.restore();
+}
+
+// Height of her current pose above its anchor, in map px (for the HUD).
+function playerHeadHeight() {
+  const f = HER_FRAMES[playerPose().name];
+  return f.ay * 0.5 * room.scale;
 }
 
 function drawHitboxes() {
@@ -730,7 +707,7 @@ function drawHud() {
 
   const anchor = player.seat ?? player;
   // Top of her head in map pixels: seated sprites are shorter than standing.
-  const headTop = ((player.seat ? HER.hemY : HER.h) * HER.scale + 4) * room.scale;
+  const headTop = playerHeadHeight() + 4 * room.scale;
   const sx = toScreenX(anchor.x);
   const sy = toScreenY(anchor.y - headTop);
 
@@ -1089,6 +1066,8 @@ function addHeart(x, y, big) {
 }
 
 function giveKiss() {
+  player.wave = 0;
+  player.idleTime = 0;
   player.facing = Math.atan2(HIM.y - player.y, HIM.x - player.x);
   player.walkTime = 0;
   // A little heart pops up between them with every kiss
@@ -1098,6 +1077,7 @@ function giveKiss() {
     kiss.progress = 0;
     kiss.celebrate = CELEBRATE_TIME;
     kiss.cooldown = KISS_COOLDOWN;
+    player.cheer = CHEER_TIME;
     exciteDog();
     kiss.burstLeft = 22;
   }

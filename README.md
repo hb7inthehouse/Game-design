@@ -29,6 +29,8 @@ He stands in the kitchen, between the island and the counters: walk up and mash 
 
 Walk up to the door at the top of the apartment and press E (or tap ENTER) to go into the bedroom; you come in through its bottom door. Stand by that door and press E (or tap EXIT) to go back. Your dog comes with you.
 
+She's a pixel-art sprite set (`assets/her.png`): 8 standing directions, a 9-frame walk cycle (legs step when walking straight up or down), idle poses she strikes when you stop (happy, peace sign, arms crossed, phone, backpack), and after a long wait she sits on the floor. She waves when you walk up to him and cheers when the kiss bar fills. On the couch she faces the TV, glances at the dog when you stop reading, and turns around when she finishes a chapter. There's also a seat on the end of the couch and one on the end of the bed.
+
 The camera is zoomed in and follows her. The dog (a pixel-art sprite sheet in `assets/dog.png`) walks along behind her, and when she stops it stands, sits facing her, lies down and eventually falls asleep. It naps on the couch while she reads and does a play bow when she finishes a chapter or fills the kiss bar.
 
 ## Tweaking
