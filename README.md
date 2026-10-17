@@ -1,6 +1,6 @@
 # Living Room
 
-A free-roam sandbox: walk a character around a top-down living room floor plan. No objective yet.
+A free-roam sandbox: walk a character around a top-down pixel-art apartment (living room and kitchen). No objective yet.
 
 ## Play
 
@@ -23,10 +23,10 @@ python3 -m http.server 8000
 
 A hosted copy runs inside the Claude app: https://claude.ai/artifact/3jkuJWVcY6zxmnhTQKpsD9
 
-Her dog tags along behind her and hops up to lie beside her whenever she sits down to read.
+Walk up to the couch to sit and read (she faces the TV, so you see her from behind). Her dog tags along behind her and hops up to lie beside her whenever she sits down.
 
-He stands in the top-right corner: walk up and mash E (or tap KISS) to fill the kiss bar. When it fills he jumps with his arms up and hearts float away, then there's a hidden 5 second cooldown before he'll take more.
+He stands in the kitchen, between the island and the counters: walk up and mash E (or tap KISS) to fill the kiss bar. When it fills he jumps with his arms up and hearts float away, then there's a hidden 5 second cooldown before he'll take more.
 
 ## Tweaking
 
-Everything lives in `game.js`. Walls are the `FLOOR` rectangle and furniture is in `OBSTACLES`, both in map-image pixels (1312 x 1199). Press **H** in-game to see them.
+Everything lives in `game.js`. The walkable floor is `FLOOR_AREAS`, furniture is in `OBSTACLES` and couch spots are in `SEATS`, all in map-image pixels (1536 x 1024, `assets/apartment.jpg`). Press **H** in-game to see the floor and furniture boxes.

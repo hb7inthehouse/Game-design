@@ -1,25 +1,32 @@
 // Living Room — a free-roam sandbox on top of the floor-plan image.
 // All world coordinates are in image pixels (the map is 1312 x 1199).
 
-const MAP_SRC = 'assets/living-room.jpg';
-const MAP_W = 1312;
-const MAP_H = 1199;
+const MAP_SRC = 'assets/apartment.jpg';
+const MAP_W = 1536;
+const MAP_H = 1024;
 
-// The ceiling fan cut out of the map, drawn over the player so they walk beneath it.
-const FAN_SRC = 'assets/ceiling-fan.png';
-const FAN_POS = { x: 535, y: 503 };
-
-// Walkable floor area (inside the walls).
-const FLOOR = { x: 205, y: 205, w: 940, h: 920 };
+// Walkable floor, as rectangles. Her whole footprint has to stay inside them.
+const FLOOR_AREAS = [
+  { name: 'main room', x: 215, y: 228, w: 1047, h: 518 },
+  { name: 'living room by the rug', x: 215, y: 740, w: 485, h: 148 },
+  { name: 'by the left door', x: 700, y: 740, w: 108, h: 60 },
+  { name: 'hall', x: 1045, y: 740, w: 105, h: 225 },
+  { name: 'by the right door', x: 1150, y: 740, w: 112, h: 60 },
+];
 
 // Furniture the player can't walk through.
 const OBSTACLES = [
-  { name: 'sofa (back)', x: 222, y: 266, w: 392, h: 234 },
-  { name: 'sofa (side)', x: 200, y: 266, w: 206, h: 624 },
-  { name: 'bookshelf', x: 1036, y: 390, w: 130, h: 558 },
-  { name: 'side table', x: 1044, y: 160, w: 130, h: 132 },
-  { name: 'tv stand', x: 198, y: 1020, w: 460, h: 110 },
-  { name: 'him', x: 965, y: 314, w: 40, h: 24 }, // matches HIM.x / HIM.y
+  { name: 'tv stand', x: 275, y: 170, w: 253, h: 98 },
+  { name: 'shelf', x: 538, y: 140, w: 129, h: 125 },
+  { name: 'plant stand', x: 1132, y: 190, w: 60, h: 72 },
+  { name: 'floor cushion', x: 205, y: 388, w: 70, h: 82 },
+  { name: 'plants by the window', x: 205, y: 520, w: 23, h: 180 },
+  { name: 'sofa', x: 228, y: 612, w: 469, h: 230 },
+  { name: 'sofa chaise', x: 230, y: 495, w: 142, h: 120 },
+  { name: 'kitchen island', x: 815, y: 340, w: 195, h: 408 },
+  { name: 'stool (top)', x: 748, y: 385, w: 70, h: 115 },
+  { name: 'stool (bottom)', x: 748, y: 528, w: 70, h: 114 },
+  { name: 'him', x: 1112, y: 455, w: 40, h: 24 }, // matches HIM.x / HIM.y
 ];
 
 // Places to sit on the sofa. (x, y) is where her hips rest; `approach` is the
@@ -27,20 +34,16 @@ const OBSTACLES = [
 // lies next to her (`ground` is where it jumps up from).
 const SEATS = [
   {
-    x: 548, y: 474, view: 'front', approach: { x: 548, y: 528 },
-    dog: { x: 488, y: 480, flip: false, ground: { x: 488, y: 540 } },
+    x: 425, y: 712, view: 'back', approach: { x: 425, y: 588 },
+    dog: { x: 488, y: 722, flip: true, ground: { x: 488, y: 588 } },
   },
   {
-    x: 440, y: 474, view: 'front', approach: { x: 440, y: 528 },
-    dog: { x: 500, y: 480, flip: true, ground: { x: 500, y: 540 } },
+    x: 525, y: 712, view: 'back', approach: { x: 525, y: 588 },
+    dog: { x: 588, y: 722, flip: true, ground: { x: 588, y: 588 } },
   },
   {
-    x: 336, y: 640, view: 'right', approach: { x: 432, y: 640 },
-    dog: { x: 345, y: 748, flip: false, ground: { x: 435, y: 748 } },
-  },
-  {
-    x: 336, y: 790, view: 'right', approach: { x: 432, y: 790 },
-    dog: { x: 345, y: 878, flip: false, ground: { x: 435, y: 878 } },
+    x: 622, y: 712, view: 'back', approach: { x: 622, y: 588 },
+    dog: { x: 560, y: 722, flip: false, ground: { x: 560, y: 588 } },
   },
 ];
 const SIT_RANGE = 80;
@@ -59,17 +62,20 @@ const ctx = canvas.getContext('2d');
 
 const mapImg = new Image();
 mapImg.src = MAP_SRC;
-const fanImg = new Image();
-fanImg.src = FAN_SRC;
 
 const saved = window.claude?.hot?.data?.player;
 const player = {
-  x: saved?.x ?? 720,
-  y: saved?.y ?? 820,
+  x: 600,
+  y: 440,
   facing: saved?.facing ?? Math.PI / 2, // radians; starts facing down, toward the viewer
   walkTime: 0,
   seat: null, // a SEATS entry while sitting
 };
+// Pick up where she was after a live update, if that spot is still on the floor.
+if (saved && isFree(saved.x, saved.y)) {
+  player.x = saved.x;
+  player.y = saved.y;
+}
 
 function loadChapters() {
   try {
@@ -190,8 +196,9 @@ function circleHitsRect(cx, cy, r, rect) {
 
 function isFree(x, y) {
   const r = PLAYER_RADIUS;
-  if (x - r < FLOOR.x || x + r > FLOOR.x + FLOOR.w) return false;
-  if (y - r < FLOOR.y || y + r > FLOOR.y + FLOOR.h) return false;
+  // Edges of her footprint all have to be on the floor
+  const onFloor = (px, py) => FLOOR_AREAS.some((a) => px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h);
+  if (![[x, y], [x - r, y], [x + r, y], [x, y - r], [x, y + r]].every(([px, py]) => onFloor(px, py))) return false;
   return !OBSTACLES.some((o) => circleHitsRect(x, y, r, o));
 }
 
@@ -452,6 +459,10 @@ function drawPlayer() {
 
 // Sitting facing the viewer: hem on the seat, knees just below, shins hanging.
 function drawSeated(seat) {
+  if (seat.view === 'back') {
+    drawSeatedBack(seat);
+    return;
+  }
   if (!spriteReady(herFront)) return;
   ctx.save();
   ctx.translate(seat.x, seat.y);
@@ -462,6 +473,21 @@ function drawSeated(seat) {
   blit(herFront, HER.legs.x, HER.kneeY, HER.legs.w, HER.h - HER.kneeY, HER.hemY - 4);
   drawUpperBody(herFront, 0);
   drawOpenBook(HER.centerX, 192);
+  ctx.restore();
+}
+
+// Sitting facing away (the couch faces the TV): her back to the viewer, hem on
+// the cushion, legs and book out of sight in front of her.
+function drawSeatedBack(seat) {
+  if (!spriteReady(herBack)) return;
+  ctx.save();
+  ctx.translate(seat.x, seat.y);
+  ctx.scale(HER.scale, HER.scale);
+  ctx.translate(-HER.centerX, -HER.hemY);
+  ctx.imageSmoothingQuality = 'high';
+  // Settle a pixel or two each time she turns a page
+  const nudge = reading.flipTime > 0 ? Math.sin((reading.flipTime / 0.25) * Math.PI) * 2 : 0;
+  drawUpperBody(herBack, nudge);
   ctx.restore();
 }
 
@@ -529,7 +555,7 @@ function drawOpenBook(cx, cy) {
 function drawHitboxes() {
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(0, 255, 120, 0.9)';
-  ctx.strokeRect(FLOOR.x, FLOOR.y, FLOOR.w, FLOOR.h);
+  for (const a of FLOOR_AREAS) ctx.strokeRect(a.x, a.y, a.w, a.h);
   ctx.fillStyle = 'rgba(255, 40, 40, 0.25)';
   ctx.strokeStyle = 'rgba(255, 40, 40, 0.9)';
   for (const o of OBSTACLES) {
@@ -989,13 +1015,13 @@ function drawDog() {
 }
 
 // ---- Him -------------------------------------------------------------------
-// Stands in the top-right corner. Walk up and mash the action button to give
+// Stands in the kitchen. Walk up and mash the action button to give
 // him kisses; when the bar fills he jumps with his arms up while hearts float
 // away. Afterwards there's a quiet 5 second cooldown before he'll take more.
 
 const HIM = {
-  x: 985, // his feet, in map px
-  y: 330,
+  x: 1132, // his feet, in map px: in the kitchen, between the island and the counters
+  y: 478,
   w: 137, // sprite px (one layer of the parts image)
   h: 352,
   scale: 0.5,
@@ -1223,12 +1249,7 @@ function render() {
   if (mapImg.complete && mapImg.naturalWidth) {
     ctx.drawImage(mapImg, 0, 0, MAP_W, MAP_H);
   }
-  // The fan hangs over the room, but one blade tip reaches the front of the couch;
-  // while she's seated there, draw it underneath so it doesn't hide her feet.
-  const fanReady = fanImg.complete && fanImg.naturalWidth;
-  if (fanReady && player.seat) ctx.drawImage(fanImg, FAN_POS.x, FAN_POS.y);
   drawActors();
-  if (fanReady && !player.seat) ctx.drawImage(fanImg, FAN_POS.x, FAN_POS.y);
   drawHearts();
   if (showHitboxes) drawHitboxes();
   drawHud();
