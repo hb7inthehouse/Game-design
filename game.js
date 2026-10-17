@@ -565,7 +565,8 @@ const SIDE = {
   thigh: 52, // hip to knee, sprite px
   shin: 90, // knee to sole
 };
-const SIDE_LAYERS = { upper: 0, thigh: 1, shin: 2, thighFar: 3, shinFar: 4 };
+const SIDE_LAYERS = { upper: 0, thigh: 1, shin: 2, thighFar: 3, shinFar: 4, arm: 5, armFar: 6 };
+const SHOULDER = { x: 46, y: 134 };
 const GAIT = {
   walkCycle: 150, // map px per full stride (two steps)
   runCycle: 230,
@@ -573,6 +574,8 @@ const GAIT = {
   runSwing: 0.62,
   knee: 0.85, // knee bend at mid-swing
   runKnee: 1.25,
+  arm: 0.3, // arm swing, radians each way
+  runArm: 0.5,
   lean: 0.035, // leans into the walk a little
   runLean: 0.08,
 };
@@ -719,6 +722,15 @@ function drawSideLeg(thighLayer, shinLayer, hipAngle, kneeAngle) {
   ctx.restore();
 }
 
+function drawSideArm(layer, angle) {
+  ctx.save();
+  ctx.translate(SHOULDER.x, SHOULDER.y);
+  ctx.rotate(angle);
+  ctx.translate(-SHOULDER.x, -SHOULDER.y);
+  sideLayer(layer);
+  ctx.restore();
+}
+
 // One leg's hip and knee angles at this point in the stride. Positive angles
 // swing the foot backward; the knee bends most while the leg swings through.
 function legAngles(phase, run) {
@@ -745,7 +757,11 @@ function drawSideWalk() {
   ctx.translate(SIDE.hip.x, SIDE.hip.y);
   ctx.rotate(-(run ? GAIT.runLean : GAIT.lean) - Math.abs(Math.sin(phase)) * 0.015);
   ctx.translate(-SIDE.hip.x, -SIDE.hip.y);
+  // Arms swing opposite their legs: the near arm goes back as the near leg steps forward.
+  const armSwing = (run ? GAIT.runArm : GAIT.arm) * Math.sin(phase);
+  drawSideArm(SIDE_LAYERS.armFar, -armSwing);
   sideLayer(SIDE_LAYERS.upper);
+  drawSideArm(SIDE_LAYERS.arm, armSwing);
   ctx.restore();
 }
 
