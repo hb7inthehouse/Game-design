@@ -1,51 +1,102 @@
-// Living Room — a free-roam sandbox on top of the floor-plan image.
-// All world coordinates are in image pixels (the map is 1312 x 1199).
+// Living Room — a free-roam sandbox across pixel-art rooms.
+// World coordinates are in pixels of the current room's map image.
 
-const MAP_SRC = 'assets/apartment.jpg';
-const MAP_W = 1536;
-const MAP_H = 1024;
-
-// Walkable floor, as rectangles. Her whole footprint has to stay inside them.
-const FLOOR_AREAS = [
-  { name: 'main room', x: 215, y: 228, w: 1047, h: 518 },
-  { name: 'living room by the rug', x: 215, y: 740, w: 485, h: 148 },
-  { name: 'by the left door', x: 700, y: 740, w: 108, h: 60 },
-  { name: 'hall', x: 1045, y: 740, w: 105, h: 225 },
-  { name: 'by the right door', x: 1150, y: 740, w: 112, h: 60 },
-];
-
-// Furniture the player can't walk through.
-const OBSTACLES = [
-  { name: 'tv stand', x: 275, y: 170, w: 253, h: 98 },
-  { name: 'shelf', x: 538, y: 140, w: 129, h: 125 },
-  { name: 'plant stand', x: 1132, y: 190, w: 60, h: 72 },
-  { name: 'floor cushion', x: 205, y: 388, w: 70, h: 82 },
-  { name: 'plants by the window', x: 205, y: 520, w: 23, h: 180 },
-  { name: 'sofa', x: 228, y: 612, w: 469, h: 230 },
-  { name: 'sofa chaise', x: 230, y: 495, w: 142, h: 120 },
-  { name: 'kitchen island', x: 815, y: 340, w: 195, h: 408 },
-  { name: 'stool (top)', x: 748, y: 385, w: 70, h: 115 },
-  { name: 'stool (bottom)', x: 748, y: 528, w: 70, h: 114 },
-  { name: 'him', x: 1112, y: 455, w: 40, h: 24 }, // matches HIM.x / HIM.y
-];
-
-// Places to sit on the sofa. (x, y) is where her hips rest; `approach` is the
-// floor spot she sits down from and stands back up to. `dog` is where the dog
-// lies next to her (`ground` is where it jumps up from).
-const SEATS = [
-  {
-    x: 425, y: 712, view: 'back', approach: { x: 425, y: 588 },
-    dog: { x: 488, y: 722, flip: true, ground: { x: 488, y: 588 } },
+// Each room: its map, walkable floor (rectangles her whole footprint must stay
+// inside), furniture she can't walk through, couch seats, and doors. Rooms are
+// drawn at different scales, so `scale` sizes the characters to match.
+// A door's (x, y) is where the button prompt shows up; `spawn` is where you
+// appear when you come into this room through that door.
+const ROOMS = {
+  apartment: {
+    id: 'apartment',
+    src: 'assets/apartment.jpg',
+    w: 1536,
+    h: 1024,
+    scale: 1,
+    floor: [
+      { name: 'main room', x: 215, y: 228, w: 1047, h: 518 },
+      { name: 'living room by the rug', x: 215, y: 740, w: 485, h: 148 },
+      { name: 'by the left door', x: 700, y: 740, w: 108, h: 60 },
+      { name: 'hall', x: 1045, y: 740, w: 105, h: 225 },
+      { name: 'by the right door', x: 1150, y: 740, w: 112, h: 60 },
+    ],
+    obstacles: [
+      { name: 'tv stand', x: 275, y: 170, w: 253, h: 98 },
+      { name: 'shelf', x: 538, y: 140, w: 129, h: 125 },
+      { name: 'plant stand', x: 1132, y: 190, w: 60, h: 72 },
+      { name: 'floor cushion', x: 205, y: 388, w: 70, h: 82 },
+      { name: 'plants by the window', x: 205, y: 520, w: 23, h: 180 },
+      { name: 'sofa', x: 228, y: 612, w: 469, h: 230 },
+      { name: 'sofa chaise', x: 230, y: 495, w: 142, h: 120 },
+      { name: 'kitchen island', x: 815, y: 340, w: 195, h: 408 },
+      { name: 'stool (top)', x: 748, y: 385, w: 70, h: 115 },
+      { name: 'stool (bottom)', x: 748, y: 528, w: 70, h: 114 },
+      { name: 'him', x: 1112, y: 455, w: 40, h: 24 }, // matches HIM.x / HIM.y
+    ],
+    // (x, y) is where her hips rest; `approach` is the floor spot she sits down
+    // from and stands back up to. `dog` is where the dog lies next to her
+    // (`ground` is where it jumps up from).
+    seats: [
+      {
+        x: 425, y: 712, view: 'back', approach: { x: 425, y: 588 },
+        dog: { x: 488, y: 722, flip: true, ground: { x: 488, y: 588 } },
+      },
+      {
+        x: 525, y: 712, view: 'back', approach: { x: 525, y: 588 },
+        dog: { x: 588, y: 722, flip: true, ground: { x: 588, y: 588 } },
+      },
+      {
+        x: 622, y: 712, view: 'back', approach: { x: 622, y: 588 },
+        dog: { x: 560, y: 722, flip: false, ground: { x: 560, y: 588 } },
+      },
+    ],
+    doors: [
+      {
+        to: 'bedroom', label: 'ENTER', prompt: 'enter the bedroom',
+        x: 772, y: 262, range: 80,
+        spawn: { x: 772, y: 272, facing: Math.PI / 2 },
+      },
+    ],
   },
-  {
-    x: 525, y: 712, view: 'back', approach: { x: 525, y: 588 },
-    dog: { x: 588, y: 722, flip: true, ground: { x: 588, y: 588 } },
+  bedroom: {
+    id: 'bedroom',
+    src: 'assets/bedroom.jpg',
+    w: 1128,
+    h: 1255,
+    scale: 1.35,
+    floor: [
+      { name: 'floor', x: 155, y: 300, w: 870, h: 715 },
+      { name: 'by the door', x: 700, y: 1000, w: 200, h: 45 },
+    ],
+    obstacles: [
+      { name: 'bed', x: 255, y: 200, w: 395, h: 475 },
+      { name: 'nightstand', x: 135, y: 240, w: 120, h: 80 },
+      { name: 'pouf', x: 145, y: 378, w: 110, h: 112 },
+      { name: 'dresser', x: 650, y: 180, w: 250, h: 160 },
+      { name: 'desk', x: 905, y: 185, w: 135, h: 115 },
+      { name: 'beanbag', x: 905, y: 300, w: 125, h: 132 },
+      { name: 'terrarium', x: 112, y: 668, w: 116, h: 110 },
+      { name: 'tv stand', x: 228, y: 900, w: 407, h: 135 },
+      { name: 'plant (left)', x: 125, y: 905, w: 110, h: 120 },
+      { name: 'mirror', x: 922, y: 808, w: 128, h: 160 },
+      { name: 'plant (right)', x: 918, y: 945, w: 107, h: 105 },
+    ],
+    seats: [],
+    doors: [
+      {
+        to: 'apartment', label: 'EXIT', prompt: 'go back out',
+        x: 800, y: 985, range: 110,
+        spawn: { x: 800, y: 965, facing: -Math.PI / 2 },
+      },
+    ],
   },
-  {
-    x: 622, y: 712, view: 'back', approach: { x: 622, y: 588 },
-    dog: { x: 560, y: 722, flip: false, ground: { x: 560, y: 588 } },
-  },
-];
+};
+for (const rm of Object.values(ROOMS)) {
+  rm.img = new Image();
+  rm.img.src = rm.src;
+}
+let room = ROOMS[window.claude?.hot?.data?.room] ?? ROOMS.apartment;
+
 const SIT_RANGE = 80;
 
 // Reading: spam the action button to fill the bar and finish a chapter.
@@ -60,8 +111,6 @@ const RUN_SPEED = 400;
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
-const mapImg = new Image();
-mapImg.src = MAP_SRC;
 
 const saved = window.claude?.hot?.data?.player;
 const player = {
@@ -69,7 +118,7 @@ const player = {
   y: 440,
   facing: saved?.facing ?? Math.PI / 2, // radians; starts facing down, toward the viewer
   walkTime: 0,
-  seat: null, // a SEATS entry while sitting
+  seat: null, // one of the room's seats while sitting
 };
 // Pick up where she was after a live update, if that spot is still on the floor.
 if (saved && isFree(saved.x, saved.y)) {
@@ -100,6 +149,7 @@ const reading = {
 };
 
 window.claude?.hot?.snapshot?.(() => ({
+  room: room.id,
   player: { x: player.x, y: player.y, facing: player.facing },
   chapters: reading.chapters,
 }));
@@ -195,11 +245,11 @@ function circleHitsRect(cx, cy, r, rect) {
 }
 
 function isFree(x, y) {
-  const r = PLAYER_RADIUS;
+  const r = PLAYER_RADIUS * room.scale;
   // Edges of her footprint all have to be on the floor
-  const onFloor = (px, py) => FLOOR_AREAS.some((a) => px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h);
+  const onFloor = (px, py) => room.floor.some((a) => px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h);
   if (![[x, y], [x - r, y], [x + r, y], [x, y - r], [x, y + r]].every(([px, py]) => onFloor(px, py))) return false;
-  return !OBSTACLES.some((o) => circleHitsRect(x, y, r, o));
+  return !room.obstacles.some((o) => circleHitsRect(x, y, r, o));
 }
 
 // ---- Sitting and reading ---------------------------------------------------
@@ -207,7 +257,7 @@ function isFree(x, y) {
 function nearestSeat() {
   let best = null;
   let bestDist = SIT_RANGE;
-  for (const seat of SEATS) {
+  for (const seat of room.seats) {
     const d = Math.hypot(player.x - seat.approach.x, player.y - seat.approach.y);
     if (d < bestDist) {
       best = seat;
@@ -217,7 +267,54 @@ function nearestSeat() {
   return best;
 }
 
+// ---- Doors ---------------------------------------------------------------
+
+const FADE_TIME = 0.25; // seconds to fade out, and again to fade back in
+const fade = { t: 0, door: null }; // t counts up through out + in while a door is used
+
+function nearestDoor() {
+  if (player.seat) return null;
+  return room.doors.find((d) => Math.hypot(player.x - d.x, player.y - d.y) < d.range * room.scale) ?? null;
+}
+
+function useDoor(door) {
+  if (fade.door) return;
+  fade.door = door;
+  fade.t = 0;
+  player.walkTime = 0;
+}
+
+// Swap rooms at the darkest point of the fade.
+function arriveThrough(door) {
+  const from = room.id;
+  room = ROOMS[door.to];
+  const entry = room.doors.find((d) => d.to === from);
+  player.x = entry.spawn.x;
+  player.y = entry.spawn.y;
+  player.facing = entry.spawn.facing;
+  player.walkTime = 0;
+  // The dog comes through right behind her.
+  dog.x = player.x - Math.cos(player.facing) * 45 * room.scale;
+  dog.y = player.y - Math.sin(player.facing) * 45 * room.scale;
+  dog.state = 'follow';
+  dog.hop = null;
+  dog.walkTime = 0;
+  trail.length = 0;
+  hearts.length = 0;
+  kiss.progress = 0;
+  resize();
+}
+
+function updateFade(dt) {
+  if (!fade.door) return;
+  const before = fade.t;
+  fade.t += dt;
+  if (before < FADE_TIME && fade.t >= FADE_TIME) arriveThrough(fade.door);
+  if (fade.t >= FADE_TIME * 2) fade.door = null;
+}
+
 function action() {
+  if (fade.door) return;
   if (player.seat) {
     if (reading.popTime > CHAPTER_POP_TIME - 0.5) return; // brief pause after a chapter
     reading.progress = Math.min(1, reading.progress + READ_PER_PRESS);
@@ -232,6 +329,11 @@ function action() {
   }
   if (canKiss()) {
     giveKiss();
+    return;
+  }
+  const door = nearestDoor();
+  if (door) {
+    useDoor(door);
     return;
   }
   const seat = nearestSeat();
@@ -255,7 +357,9 @@ function updateActionButton() {
   let label = '';
   if (player.seat) label = 'READ';
   else if (canKiss()) label = 'KISS';
+  else if (nearestDoor()) label = nearestDoor().label;
   else if (nearestSeat()) label = 'SIT';
+  if (fade.door) label = '';
   if (actionBtn.textContent !== label) actionBtn.textContent = label;
   actionBtn.disabled = !label;
 }
@@ -263,6 +367,12 @@ function updateActionButton() {
 // ---- Update --------------------------------------------------------------
 
 function update(dt) {
+  updateFade(dt);
+  if (fade.door) {
+    player.walkTime = 0; // hold still while the screen fades
+    updateActionButton();
+    return;
+  }
   updatePlayer(dt);
   updateDog(dt);
   updateKiss(dt);
@@ -296,7 +406,7 @@ function updatePlayer(dt) {
 
   const len = Math.hypot(dx, dy);
   const running = runToggle || keys.has('ShiftLeft') || keys.has('ShiftRight');
-  const step = (running ? RUN_SPEED : WALK_SPEED) * dt;
+  const step = (running ? RUN_SPEED : WALK_SPEED) * room.scale * dt;
   const mx = (dx / len) * step;
   const my = (dy / len) * step;
 
@@ -313,9 +423,9 @@ function updatePlayer(dt) {
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const box = document.getElementById('game');
-  scale = Math.min(box.clientWidth / MAP_W, box.clientHeight / MAP_H);
-  const cssW = Math.floor(MAP_W * scale);
-  const cssH = Math.floor(MAP_H * scale);
+  scale = Math.min(box.clientWidth / room.w, box.clientHeight / room.h);
+  const cssW = Math.floor(room.w * scale);
+  const cssH = Math.floor(room.h * scale);
   canvas.style.width = cssW + 'px';
   canvas.style.height = cssH + 'px';
   canvas.width = Math.floor(cssW * dpr);
@@ -433,6 +543,7 @@ function drawPlayer() {
 
   ctx.save();
   ctx.translate(player.x, player.y);
+  ctx.scale(room.scale, room.scale);
 
   // Shadow narrows a touch while a foot is up
   ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
@@ -466,6 +577,7 @@ function drawSeated(seat) {
   if (!spriteReady(herFront)) return;
   ctx.save();
   ctx.translate(seat.x, seat.y);
+  ctx.scale(room.scale, room.scale);
   ctx.scale(HER.scale, HER.scale);
   ctx.translate(-HER.centerX, -HER.hemY);
   ctx.imageSmoothingQuality = 'high';
@@ -482,6 +594,7 @@ function drawSeatedBack(seat) {
   if (!spriteReady(herBack)) return;
   ctx.save();
   ctx.translate(seat.x, seat.y);
+  ctx.scale(room.scale, room.scale);
   ctx.scale(HER.scale, HER.scale);
   ctx.translate(-HER.centerX, -HER.hemY);
   ctx.imageSmoothingQuality = 'high';
@@ -555,16 +668,16 @@ function drawOpenBook(cx, cy) {
 function drawHitboxes() {
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(0, 255, 120, 0.9)';
-  for (const a of FLOOR_AREAS) ctx.strokeRect(a.x, a.y, a.w, a.h);
+  for (const a of room.floor) ctx.strokeRect(a.x, a.y, a.w, a.h);
   ctx.fillStyle = 'rgba(255, 40, 40, 0.25)';
   ctx.strokeStyle = 'rgba(255, 40, 40, 0.9)';
-  for (const o of OBSTACLES) {
+  for (const o of room.obstacles) {
     ctx.fillRect(o.x, o.y, o.w, o.h);
     ctx.strokeRect(o.x, o.y, o.w, o.h);
   }
   ctx.strokeStyle = 'rgba(255, 255, 0, 0.9)';
   ctx.beginPath();
-  ctx.arc(player.x, player.y, PLAYER_RADIUS, 0, Math.PI * 2);
+  ctx.arc(player.x, player.y, PLAYER_RADIUS * room.scale, 0, Math.PI * 2);
   ctx.stroke();
 }
 
@@ -578,7 +691,7 @@ function drawHud() {
 
   const anchor = player.seat ?? player;
   // Top of her head in map pixels: seated sprites are shorter than standing.
-  const headTop = (player.seat ? HER.hemY : HER.h) * HER.scale + 4;
+  const headTop = ((player.seat ? HER.hemY : HER.h) * HER.scale + 4) * room.scale;
   const sx = anchor.x * scale;
   const sy = (anchor.y - headTop) * scale;
 
@@ -629,11 +742,21 @@ function drawHud() {
       const hint = isTouch ? 'Tap READ fast · arrows to get up' : 'Mash E or Space · arrows to get up';
       pill(hint, sx, by + h + 16, 'rgba(28, 25, 21, 0.75)', '#efe6d8');
     }
+  } else if (nearestDoor() && !fade.door) {
+    const door = nearestDoor();
+    ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    const text = isTouch ? `Tap ${door.label} to ${door.prompt}` : `Press E to ${door.prompt}`;
+    pill(text, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   } else if (nearestSeat()) {
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
     pill(isTouch ? 'Tap SIT to read' : 'Press E to sit and read', sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
   drawKissHud();
+  if (fade.door) {
+    const k = fade.t < FADE_TIME ? fade.t / FADE_TIME : 2 - fade.t / FADE_TIME;
+    ctx.fillStyle = `rgba(12, 10, 8, ${Math.min(1, Math.max(0, k))})`;
+    ctx.fillRect(0, 0, room.w * scale, room.h * scale);
+  }
   ctx.restore();
 }
 
@@ -724,7 +847,7 @@ function updateDog(dt) {
   if (dog.state === 'toCouch') {
     const spot = dogSpotFor(player.seat);
     dog.lastSeat = player.seat;
-    if (moveDogToward(spot.ground.x, spot.ground.y, DOG_MAX_SPEED * 0.75, dt)) {
+    if (moveDogToward(spot.ground.x, spot.ground.y, DOG_MAX_SPEED * room.scale * 0.75, dt)) {
       startHop({ x: spot.x, y: spot.y }, 'hopUp');
     }
     return;
@@ -763,9 +886,9 @@ function updateDog(dt) {
     pathLen += Math.hypot(trail[i].x - trail[i - 1].x, trail[i].y - trail[i - 1].y);
   }
 
-  const excess = pathLen - DOG_FOLLOW_DIST;
+  const excess = pathLen - DOG_FOLLOW_DIST * room.scale;
   if (excess > 0) {
-    const speed = Math.min(DOG_MAX_SPEED, 120 + excess * 5);
+    const speed = Math.min(DOG_MAX_SPEED * room.scale, 120 + excess * 5);
     moveDogToward(trail[0].x, trail[0].y, speed, dt);
   } else {
     dog.walkTime = 0;
@@ -998,6 +1121,7 @@ function drawDog() {
   if (dog.hop) lift = Math.sin(dog.hop.t * Math.PI) * 22;
   ctx.save();
   ctx.translate(dog.x, dog.y);
+  ctx.scale(room.scale, room.scale);
 
   if (dog.state !== 'couch') {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
@@ -1054,7 +1178,7 @@ function nearHim() {
 }
 
 function canKiss() {
-  return !player.seat && kiss.cooldown <= 0 && nearHim();
+  return room.id === 'apartment' && !player.seat && kiss.cooldown <= 0 && nearHim();
 }
 
 function addHeart(x, y, big) {
@@ -1198,7 +1322,7 @@ function drawHim() {
 
 // Bar over his head while kissing; nothing at all during the cooldown.
 function drawKissHud() {
-  if (kiss.cooldown > 0 || player.seat) return;
+  if (room.id !== 'apartment' || kiss.cooldown > 0 || player.seat) return;
   if (!nearHim() && kiss.progress === 0) return;
   const sx = HIM.x * scale;
   const sy = (HIM.y - HIM.h * HIM.scale - 6) * scale;
@@ -1238,16 +1362,16 @@ function drawActors() {
   const actors = [
     { y: player.seat ? player.seat.y : player.y, draw: drawPlayer },
     { y: dog.hop ? Math.max(dog.hop.from.y, dog.hop.to.y) : dog.y, draw: drawDog },
-    { y: HIM.y, draw: drawHim },
   ];
+  if (room.id === 'apartment') actors.push({ y: HIM.y, draw: drawHim });
   actors.sort((a, b) => a.y - b.y);
   for (const a of actors) a.draw();
 }
 
 function render() {
-  ctx.clearRect(0, 0, MAP_W, MAP_H);
-  if (mapImg.complete && mapImg.naturalWidth) {
-    ctx.drawImage(mapImg, 0, 0, MAP_W, MAP_H);
+  ctx.clearRect(0, 0, room.w, room.h);
+  if (room.img.complete && room.img.naturalWidth) {
+    ctx.drawImage(room.img, 0, 0, room.w, room.h);
   }
   drawActors();
   drawHearts();
