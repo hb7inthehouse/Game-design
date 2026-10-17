@@ -130,7 +130,9 @@ const player = {
   facing: saved?.facing ?? Math.PI / 2, // radians; starts facing down, toward the viewer
   walkTime: 0,
   seat: null, // one of the room's seats while sitting
-  stride: 0, // distance walked, drives the walk-cycle frame
+  stride: 0, // distance walked, drives stepping when walking up or down
+  gait: 0, // stride cycles walked, drives the side-on walk
+  running: false,
   moveDx: 0, // direction of the last step
   moveDy: 0,
   idleTime: 0, // how long she's been standing still
@@ -455,7 +457,9 @@ function updatePlayer(dt) {
   // Move each axis separately so the player slides along walls/furniture.
   if (isFree(player.x + mx, player.y)) player.x += mx;
   if (isFree(player.x, player.y + my)) player.y += my;
-  player.stride += step / room.scale / (running ? Math.sqrt(RUN_SPEED / WALK_SPEED) : 1);
+  player.stride += step / room.scale;
+  player.gait += step / room.scale / (running ? GAIT.runCycle : GAIT.walkCycle);
+  player.running = running;
 
   player.facing = Math.atan2(dy, dx);
   player.walkTime += dt * (running ? 1.8 : 1);
@@ -547,8 +551,31 @@ const HER_FRAMES = {
   couchBack: { r: [189, 692, 117, 195], ax: 56, ay: 190 },
   couchBackLeft: { r: [308, 692, 168, 259], ax: 127, ay: 188 },
 };
-const HER_WALK = ['walk1', 'walk2', 'walk3', 'walk4', 'walk5', 'walk6', 'walk7', 'walk8', 'walk9'];
-const HER_STEP = 20; // map px travelled per walk frame (~8 frames a second walking)
+// Walking sideways is animated from her side-view pose split into layers
+// (assets/her-walk.png, each layer 90 x 342 like the 'right' pose): upper body,
+// thigh, shin + shoe, and darker copies of the leg for the far side. Legs swing
+// from the hip and bend at the knee; she dips as her feet spread and rises as
+// they pass, which is what gives a walk its weight.
+const herWalkImg = new Image();
+herWalkImg.src = 'assets/her-walk.png';
+const SIDE = {
+  w: 90, h: 342, ax: 54, ay: 342,
+  hip: { x: 53, y: 200 },
+  knee: { x: 51, y: 252 },
+  thigh: 52, // hip to knee, sprite px
+  shin: 90, // knee to sole
+};
+const SIDE_LAYERS = { upper: 0, thigh: 1, shin: 2, thighFar: 3, shinFar: 4 };
+const GAIT = {
+  walkCycle: 150, // map px per full stride (two steps)
+  runCycle: 230,
+  swing: 0.42, // hip swing, radians each way
+  runSwing: 0.62,
+  knee: 0.85, // knee bend at mid-swing
+  runKnee: 1.25,
+  lean: 0.035, // leans into the walk a little
+  runLean: 0.08,
+};
 const HER_LEG_LIFT = 14; // sprite px a foot rises when walking straight up or down
 
 // Idle routine: after a short pause she strikes a pose now and then, and after a
@@ -591,10 +618,7 @@ function facingAway(facing) {
 function playerPose() {
   if (player.seat) return seatedPose(player.seat);
   if (player.walkTime > 0) {
-    if (player.moveDx !== 0) {
-      const frame = HER_WALK[Math.floor(player.stride / HER_STEP) % HER_WALK.length];
-      return { name: frame, mirror: player.moveDx < 0 };
-    }
+    if (player.moveDx !== 0) return { name: 'right', mirror: player.moveDx < 0, side: true };
     return { name: player.moveDy < 0 ? 'back' : 'front', stepping: true };
   }
   if (player.cheer > 0) return { name: 'happy' };
@@ -657,9 +681,11 @@ function drawPlayer() {
   ctx.scale(pose.mirror ? -0.5 : 0.5, 0.5);
   ctx.imageSmoothingQuality = 'high';
 
-  if (pose.stepping) {
+  if (pose.side) {
+    drawSideWalk();
+  } else if (pose.stepping) {
     // Walking straight toward or away from the viewer: step each leg in turn.
-    const s = Math.sin(player.stride / HER_STEP * Math.PI / 2);
+    const s = Math.sin(player.gait * Math.PI * 2); // same rhythm as the side-on walk
     const liftL = Math.max(0, s) * HER_LEG_LIFT;
     const liftR = Math.max(0, -s) * HER_LEG_LIFT;
     const bob = -Math.abs(s) * 3;
@@ -672,6 +698,54 @@ function drawPlayer() {
     const nudge = player.seat && reading.flipTime > 0 ? Math.sin((reading.flipTime / 0.25) * Math.PI) * 3 : 0;
     blitHer(f, 0, 0, w, h, 0, nudge);
   }
+  ctx.restore();
+}
+
+function sideLayer(layer) {
+  ctx.drawImage(herWalkImg, layer * SIDE.w, 0, SIDE.w, SIDE.h, 0, 0, SIDE.w, SIDE.h);
+}
+
+function drawSideLeg(thighLayer, shinLayer, hipAngle, kneeAngle) {
+  const { hip, knee } = SIDE;
+  ctx.save();
+  ctx.translate(hip.x, hip.y);
+  ctx.rotate(hipAngle);
+  ctx.translate(-hip.x, -hip.y);
+  sideLayer(thighLayer);
+  ctx.translate(knee.x, knee.y);
+  ctx.rotate(kneeAngle);
+  ctx.translate(-knee.x, -knee.y);
+  sideLayer(shinLayer);
+  ctx.restore();
+}
+
+// One leg's hip and knee angles at this point in the stride. Positive angles
+// swing the foot backward; the knee bends most while the leg swings through.
+function legAngles(phase, run) {
+  const swing = run ? GAIT.runSwing : GAIT.swing;
+  const bend = run ? GAIT.runKnee : GAIT.knee;
+  const hip = -swing * Math.sin(phase);
+  const knee = bend * Math.pow(Math.max(0, Math.cos(phase)), 1.5) + 0.06;
+  return { hip, knee };
+}
+
+function drawSideWalk() {
+  if (!spriteReady(herWalkImg)) return;
+  const phase = player.gait * Math.PI * 2;
+  const run = player.running;
+  const near = legAngles(phase, run);
+  const far = legAngles(phase + Math.PI, run);
+  // Keep the lower foot on the floor: the more the legs spread, the lower the hips.
+  const footY = (a) => SIDE.thigh * Math.cos(a.hip) + SIDE.shin * Math.cos(a.hip + a.knee);
+  const drop = SIDE.thigh + SIDE.shin - Math.max(footY(near), footY(far));
+  ctx.translate(-SIDE.ax, -SIDE.ay + drop);
+  drawSideLeg(SIDE_LAYERS.thighFar, SIDE_LAYERS.shinFar, far.hip, far.knee);
+  drawSideLeg(SIDE_LAYERS.thigh, SIDE_LAYERS.shin, near.hip, near.knee);
+  ctx.save();
+  ctx.translate(SIDE.hip.x, SIDE.hip.y);
+  ctx.rotate(-(run ? GAIT.runLean : GAIT.lean) - Math.abs(Math.sin(phase)) * 0.015);
+  ctx.translate(-SIDE.hip.x, -SIDE.hip.y);
+  sideLayer(SIDE_LAYERS.upper);
   ctx.restore();
 }
 
@@ -804,18 +878,18 @@ const DOG_FRAMES = {
   back: { r: [293, 0, 60, 119] },
   left: { r: [355, 0, 139, 115] },
   frontHeadRight: { r: [496, 0, 75, 111] },
-  walk1: { r: [573, 0, 131, 108], headRight: true },
-  walk2: { r: [706, 0, 149, 109], headRight: true },
-  walk3: { r: [857, 0, 147, 113], headRight: true },
-  walk4: { r: [1006, 0, 182, 118], headRight: true },
-  walk5: { r: [1190, 0, 169, 117], headRight: true },
-  walk6: { r: [1361, 0, 172, 117], headRight: true },
-  walk7: { r: [1535, 0, 169, 119], headRight: true },
-  idle: { r: [1706, 0, 108, 97], headRight: false },
-  sit: { r: [1816, 0, 78, 111] },
-  lie: { r: [1896, 0, 118, 69], headRight: true },
-  bow: { r: [2016, 0, 116, 102], headRight: false },
-  sleep: { r: [2134, 0, 123, 69], headRight: false },
+  walk1: { r: [573, 0, 141, 116], headRight: true },
+  walk2: { r: [716, 0, 158, 116], headRight: true },
+  walk3: { r: [876, 0, 150, 116], headRight: true },
+  walk4: { r: [1028, 0, 179, 116], headRight: true },
+  walk5: { r: [1209, 0, 168, 116], headRight: true },
+  walk6: { r: [1379, 0, 171, 116], headRight: true },
+  walk7: { r: [1552, 0, 164, 116], headRight: true },
+  idle: { r: [1718, 0, 108, 97], headRight: false },
+  sit: { r: [1828, 0, 78, 111] },
+  lie: { r: [1908, 0, 118, 69], headRight: true },
+  bow: { r: [2028, 0, 116, 102], headRight: false },
+  sleep: { r: [2146, 0, 123, 69], headRight: false },
 };
 const DOG_WALK = ['walk1', 'walk2', 'walk3', 'walk4', 'walk5', 'walk6', 'walk7'];
 const DOG_STEP = 16; // map px travelled per walk frame (~10 frames a second at her pace)
@@ -1003,7 +1077,9 @@ function drawDog() {
     ctx.ellipse(0, 0, (fw / 4) * (1 - lift / 60), 5, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.translate(0, -lift);
+  // Trotting bounce: two little lifts per walk cycle
+  const trot = pose.name.startsWith('walk') ? Math.abs(Math.sin((dog.stride / DOG_STEP / DOG_WALK.length) * Math.PI * 2)) * 2.2 : 0;
+  ctx.translate(0, -lift - trot);
   ctx.scale(mirror ? -0.5 : 0.5, 0.5 * breathe);
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(dogImg, fx, fy, fw, fh, -fw / 2, -fh, fw, fh);
