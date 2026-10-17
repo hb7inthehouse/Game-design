@@ -158,7 +158,13 @@ const keys = new Set();
 const touchDirs = new Set();
 let showHitboxes = false;
 let runToggle = false;
-let scale = 1;
+let scale = 1; // camera zoom: screen px per map px
+let viewW = 0; // size of the game view in CSS px
+let viewH = 0;
+// Camera: how much of the room fits across the screen's shorter side (map px,
+// times the room's scale), and where it's looking.
+const VIEW_SPAN = 560;
+const cam = { x: 0, y: 0, snap: true };
 const isTouch = matchMedia('(hover: none), (pointer: coarse)').matches;
 
 // ---- Input ---------------------------------------------------------------
@@ -303,6 +309,7 @@ function arriveThrough(door) {
   hearts.length = 0;
   kiss.progress = 0;
   resize();
+  cam.snap = true;
 }
 
 function updateFade(dt) {
@@ -324,6 +331,7 @@ function action() {
       saveChapters(reading.chapters);
       reading.progress = 0;
       reading.popTime = CHAPTER_POP_TIME;
+      exciteDog();
     }
     return;
   }
@@ -368,6 +376,7 @@ function updateActionButton() {
 
 function update(dt) {
   updateFade(dt);
+  updateCamera(dt);
   if (fade.door) {
     player.walkTime = 0; // hold still while the screen fades
     updateActionButton();
@@ -423,15 +432,45 @@ function updatePlayer(dt) {
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const box = document.getElementById('game');
-  scale = Math.min(box.clientWidth / room.w, box.clientHeight / room.h);
-  const cssW = Math.floor(room.w * scale);
-  const cssH = Math.floor(room.h * scale);
-  canvas.style.width = cssW + 'px';
-  canvas.style.height = cssH + 'px';
-  canvas.width = Math.floor(cssW * dpr);
-  canvas.height = Math.floor(cssH * dpr);
-  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  viewW = box.clientWidth;
+  viewH = box.clientHeight;
+  // Zoom in, but never so far out that the room leaves empty margins on both axes.
+  const fit = Math.min(viewW / room.w, viewH / room.h);
+  scale = Math.max(fit, Math.min(viewW, viewH) / (VIEW_SPAN * room.scale));
+  canvas.style.width = viewW + 'px';
+  canvas.style.height = viewH + 'px';
+  canvas.width = Math.floor(viewW * dpr);
+  canvas.height = Math.floor(viewH * dpr);
 }
+
+// Follow her (a little above her feet so she sits mid-screen), easing toward
+// her and stopping at the room's edges.
+function updateCamera(dt) {
+  const target = player.seat ?? player;
+  let tx = target.x;
+  let ty = target.y - 70 * room.scale;
+  const halfW = viewW / scale / 2;
+  const halfH = viewH / scale / 2;
+  tx = room.w <= halfW * 2 ? room.w / 2 : Math.min(Math.max(tx, halfW), room.w - halfW);
+  ty = room.h <= halfH * 2 ? room.h / 2 : Math.min(Math.max(ty, halfH), room.h - halfH);
+  if (cam.snap) {
+    cam.x = tx;
+    cam.y = ty;
+    cam.snap = false;
+    return;
+  }
+  const k = Math.min(1, dt * 6);
+  cam.x += (tx - cam.x) * k;
+  cam.y += (ty - cam.y) * k;
+}
+
+function toScreenX(x) {
+  return (x - cam.x) * scale + viewW / 2;
+}
+function toScreenY(y) {
+  return (y - cam.y) * scale + viewH / 2;
+}
+
 window.addEventListener('resize', resize);
 new ResizeObserver(resize).observe(document.getElementById('game'));
 resize();
@@ -692,8 +731,8 @@ function drawHud() {
   const anchor = player.seat ?? player;
   // Top of her head in map pixels: seated sprites are shorter than standing.
   const headTop = ((player.seat ? HER.hemY : HER.h) * HER.scale + 4) * room.scale;
-  const sx = anchor.x * scale;
-  const sy = (anchor.y - headTop) * scale;
+  const sx = toScreenX(anchor.x);
+  const sy = toScreenY(anchor.y - headTop);
 
   if (player.seat) {
     const w = 96;
@@ -755,7 +794,7 @@ function drawHud() {
   if (fade.door) {
     const k = fade.t < FADE_TIME ? fade.t / FADE_TIME : 2 - fade.t / FADE_TIME;
     ctx.fillStyle = `rgba(12, 10, 8, ${Math.min(1, Math.max(0, k))})`;
-    ctx.fillRect(0, 0, room.w * scale, room.h * scale);
+    ctx.fillRect(0, 0, viewW, viewH);
   }
   ctx.restore();
 }
@@ -771,24 +810,45 @@ function pill(text, cx, cy, bg, fg) {
 }
 
 // ---- Dog -------------------------------------------------------------------
-// Small brindle pup with a white chest, muzzle and face blaze, brown patches
-// around the eyes, big upright ears, short legs, white paws and a white tail tip.
-// She follows the player's footsteps (so she never cuts through furniture) and
-// hops up to lie on the couch whenever the player sits down to read.
+// Pixel-art pup from the sprite sheet (assets/dog.png). She follows the
+// player's footsteps (so she never cuts through furniture) using the walk
+// cycle; when the player stops she stands, then sits facing the player, lies
+// down and eventually falls asleep. She hops up to lie on the couch while the
+// player reads, and does a play bow when something exciting happens.
 
-const DOG_LOOK = {
-  coat: '#9a5a2c',
-  coatLight: '#b8743d',
-  stripe: 'rgba(58, 30, 14, 0.55)',
-  white: '#f6f1e8',
-  earInner: '#d9a0a0',
-  earOuter: '#4a2a18',
-  nose: '#1b1411',
-  eye: '#1b1411',
-  outline: '#2a1d15',
+const dogImg = new Image();
+dogImg.src = 'assets/dog.png';
+// Poses in the dog image: [x, y, w, h], stored at 2 image px per map px.
+// `headRight` says which way the art faces, so we know when to mirror it.
+const DOG_FRAMES = {
+  front: { r: [0, 0, 74, 111] },
+  frontHeadLeft: { r: [76, 0, 76, 111] },
+  right: { r: [154, 0, 137, 115] },
+  back: { r: [293, 0, 60, 119] },
+  left: { r: [355, 0, 139, 115] },
+  frontHeadRight: { r: [496, 0, 75, 111] },
+  walk1: { r: [573, 0, 131, 108], headRight: true },
+  walk2: { r: [706, 0, 149, 109], headRight: true },
+  walk3: { r: [857, 0, 147, 113], headRight: true },
+  walk4: { r: [1006, 0, 182, 118], headRight: true },
+  walk5: { r: [1190, 0, 169, 117], headRight: true },
+  walk6: { r: [1361, 0, 172, 117], headRight: true },
+  walk7: { r: [1535, 0, 169, 119], headRight: true },
+  idle: { r: [1706, 0, 108, 97], headRight: false },
+  sit: { r: [1816, 0, 78, 111] },
+  lie: { r: [1896, 0, 118, 69], headRight: true },
+  bow: { r: [2016, 0, 116, 102], headRight: false },
+  sleep: { r: [2134, 0, 123, 69], headRight: false },
 };
+const DOG_WALK = ['walk1', 'walk2', 'walk3', 'walk4', 'walk5', 'walk6', 'walk7'];
+const DOG_STEP = 7; // map px travelled per walk frame
+// How long she waits (seconds) before settling into each idle pose
+const DOG_SIT_AFTER = 1.2;
+const DOG_LIE_AFTER = 7;
+const DOG_SLEEP_AFTER = 16;
+const DOG_COUCH_SLEEP_AFTER = 12;
+const DOG_BOW_TIME = 1.4;
 
-const DOG_SCALE = 1.3;
 const DOG_FOLLOW_DIST = 70; // how far behind (along her path) the dog trails
 const DOG_MAX_SPEED = 480;
 const HOP_TIME = 0.35;
@@ -799,6 +859,10 @@ const dog = {
   flip: false, // true = facing left
   walkTime: 0,
   wagTime: 0,
+  stride: 0, // distance walked, drives the walk-cycle frame
+  idleTime: 0, // how long she's been waiting for the player
+  couchTime: 0, // how long she's been lying on the couch
+  excited: 0, // play bow countdown
   state: 'follow', // follow | toCouch | hopUp | couch | hopDown
   hop: null, // { from, to, t }
 };
@@ -818,6 +882,7 @@ function moveDogToward(tx, ty, speed, dt) {
   dog.y += (dy / d) * step;
   if (Math.abs(dx) > 0.5) dog.flip = dx < 0;
   dog.walkTime += dt * (speed / 260);
+  dog.stride += step / room.scale;
   return step >= d - 0.01;
 }
 
@@ -828,6 +893,8 @@ function startHop(to, next) {
 
 function updateDog(dt) {
   dog.wagTime += dt;
+  dog.excited = Math.max(0, dog.excited - dt);
+  dog.couchTime = dog.state === 'couch' ? dog.couchTime + dt : 0;
 
   // Sitting down / standing up switches what the dog is doing.
   if (player.seat && (dog.state === 'follow' || dog.state === 'hopDown')) {
@@ -892,249 +959,76 @@ function updateDog(dt) {
     moveDogToward(trail[0].x, trail[0].y, speed, dt);
   } else {
     dog.walkTime = 0;
+    dog.idleTime += dt;
     // Face toward the player while waiting.
     if (Math.abs(player.x - dog.x) > 4) dog.flip = player.x < dog.x;
   }
+  if (dog.walkTime > 0) dog.idleTime = 0;
 }
 
-function dogFillStroke(fill, lw = 1.2) {
-  ctx.fillStyle = fill;
-  ctx.fill();
-  ctx.lineWidth = lw;
-  ctx.strokeStyle = DOG_LOOK.outline;
-  ctx.stroke();
+// Something fun happened: wake up and play bow (or just wake up on the couch).
+function exciteDog() {
+  dog.idleTime = 0;
+  dog.couchTime = 0;
+  if (dog.state === 'follow') dog.excited = DOG_BOW_TIME;
 }
 
-function coatGradient(y0, y1) {
-  const g = ctx.createLinearGradient(0, y0, 0, y1);
-  g.addColorStop(0, DOG_LOOK.coat);
-  g.addColorStop(1, DOG_LOOK.coatLight);
-  return g;
-}
-
-// Brindle: short dark tiger stripes across the coat.
-function brindle(cx, cy, w, h) {
-  ctx.strokeStyle = DOG_LOOK.stripe;
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 6; i++) {
-    const sx = cx - w / 2 + (i + 0.5) * (w / 6);
-    ctx.beginPath();
-    ctx.moveTo(sx - 1.5, cy - h / 2);
-    ctx.quadraticCurveTo(sx + 1.5, cy, sx - 0.5, cy + h / 2);
-    ctx.stroke();
+// Which pose to show, and whether her head should point left.
+function dogPose() {
+  if (dog.hop) return { name: 'walk4', left: dog.flip };
+  if (dog.state === 'couch') {
+    return { name: dog.couchTime > DOG_COUCH_SLEEP_AFTER ? 'sleep' : 'lie', left: dog.flip };
   }
-}
-
-// Head looking slightly toward the viewer, nose pointing right.
-function drawDogHead(hx, hy) {
-  const D = DOG_LOOK;
-  // Ears: big, upright, dark outside with pink inside
-  for (const [ex, lean] of [[-3.5, -0.25], [3, 0.2]]) {
-    ctx.save();
-    ctx.translate(hx + ex, hy - 5);
-    ctx.rotate(lean);
-    ctx.beginPath();
-    ctx.moveTo(-4, 1);
-    ctx.quadraticCurveTo(-3.5, -9, 0, -14);
-    ctx.quadraticCurveTo(3.5, -9, 4, 1);
-    ctx.closePath();
-    dogFillStroke(D.earOuter);
-    ctx.beginPath();
-    ctx.moveTo(-2.2, 0);
-    ctx.quadraticCurveTo(-2, -7, 0, -10.5);
-    ctx.quadraticCurveTo(2, -7, 2.2, 0);
-    ctx.closePath();
-    ctx.fillStyle = D.earInner;
-    ctx.fill();
-    ctx.restore();
+  if (dog.walkTime > 0) {
+    return { name: DOG_WALK[Math.floor(dog.stride / DOG_STEP) % DOG_WALK.length], left: dog.flip };
   }
-  // Skull: brown on top and sides, white blaze down the middle
-  ctx.beginPath();
-  ctx.ellipse(hx, hy, 8, 7.5, 0, 0, Math.PI * 2);
-  dogFillStroke(D.coat);
-  ctx.fillStyle = D.white;
-  ctx.beginPath();
-  ctx.moveTo(hx - 1.6, hy - 7.2);
-  ctx.quadraticCurveTo(hx + 1, hy - 7.5, hx + 2.5, hy - 2);
-  ctx.quadraticCurveTo(hx + 7, hy + 2, hx + 6, hy + 6.5);
-  ctx.quadraticCurveTo(hx, hy + 8.5, hx - 6, hy + 6);
-  ctx.quadraticCurveTo(hx - 5, hy + 1, hx - 1.6, hy - 7.2);
-  ctx.closePath();
-  ctx.fill();
-  // Muzzle
-  ctx.beginPath();
-  ctx.ellipse(hx + 6, hy + 3, 5, 3.6, 0.1, 0, Math.PI * 2);
-  dogFillStroke(D.white);
-  ctx.beginPath();
-  ctx.ellipse(hx + 10.4, hy + 2.2, 1.9, 1.6, 0, 0, Math.PI * 2);
-  ctx.fillStyle = D.nose;
-  ctx.fill();
-  ctx.strokeStyle = D.outline;
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  ctx.moveTo(hx + 7, hy + 5.6);
-  ctx.quadraticCurveTo(hx + 8.5, hy + 6.4, hx + 10, hy + 5.2);
-  ctx.stroke();
-  // Eyes in brown patches
-  for (const ex of [-2.5, 3.6]) {
-    ctx.fillStyle = D.coat;
-    ctx.beginPath();
-    ctx.ellipse(hx + ex, hy - 1.2, 2.6, 2.3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = D.eye;
-    ctx.beginPath();
-    ctx.arc(hx + ex + 0.3, hy - 1, 1.25, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.beginPath();
-    ctx.arc(hx + ex + 0.7, hy - 1.5, 0.45, 0, Math.PI * 2);
-    ctx.fill();
+  // Waiting: look toward the player.
+  const tx = (player.seat ?? player).x - dog.x;
+  const ty = (player.seat ?? player).y - dog.y;
+  const toLeft = tx < 0;
+  const side = Math.abs(tx) > Math.abs(ty) * 1.2;
+  const above = !side && ty < 0;
+  if (dog.excited > 0) return { name: 'bow', left: toLeft };
+  const t = dog.idleTime;
+  if (t > DOG_SLEEP_AFTER) return { name: 'sleep', left: toLeft };
+  if (t > DOG_LIE_AFTER) return { name: 'lie', left: toLeft };
+  if (t > DOG_SIT_AFTER) {
+    if (above) return { name: 'back' };
+    if (side) return { name: toLeft ? 'frontHeadLeft' : 'frontHeadRight' };
+    return { name: 'front' };
   }
+  if (above) return { name: 'back' };
+  if (side) return { name: toLeft ? 'left' : 'right' };
+  return { name: 'idle', left: toLeft };
 }
 
-function drawDogTail(baseX, baseY, wag) {
-  const D = DOG_LOOK;
-  const tipX = baseX - 10;
-  const tipY = baseY - 4 + wag;
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = D.outline;
-  ctx.lineWidth = 5.2;
-  ctx.beginPath();
-  ctx.moveTo(baseX, baseY);
-  ctx.quadraticCurveTo(baseX - 6, baseY - 1, tipX, tipY);
-  ctx.stroke();
-  ctx.strokeStyle = D.coat;
-  ctx.lineWidth = 3.4;
-  ctx.stroke();
-  ctx.strokeStyle = D.white;
-  ctx.beginPath();
-  ctx.moveTo(baseX - 7, baseY - 2 + wag * 0.6);
-  ctx.lineTo(tipX, tipY);
-  ctx.stroke();
-  ctx.lineCap = 'butt';
-}
-
-function drawDogLeg(x, top, swing, color, paw) {
-  ctx.beginPath();
-  ctx.roundRect(x - 2.4 + swing, top, 4.8, -top - 1, 2);
-  dogFillStroke(color, 1);
-  ctx.beginPath();
-  ctx.ellipse(x + swing + 0.8, -1.4, 3, 1.8, 0, 0, Math.PI * 2);
-  dogFillStroke(paw, 1);
-}
-
-function drawDogStanding() {
-  const D = DOG_LOOK;
-  const moving = dog.walkTime > 0;
-  const phase = Math.sin(dog.walkTime * 16);
-  const swing = moving ? phase * 2.6 : 0;
-  const bob = moving ? -Math.abs(phase) * 0.8 : 0;
-  const wag = Math.sin(dog.wagTime * (moving ? 10 : 16)) * 3;
-
-  // Far legs (darker, behind the body)
-  ctx.globalAlpha = 0.85;
-  drawDogLeg(9, -12, -swing, D.white, D.white);
-  drawDogLeg(-12, -12, swing, D.coat, D.white);
-  ctx.globalAlpha = 1;
-
-  ctx.save();
-  ctx.translate(0, bob);
-  drawDogTail(-17, -19, wag);
-  // Body
-  ctx.beginPath();
-  ctx.ellipse(-2, -18, 18, 8.5, 0, 0, Math.PI * 2);
-  dogFillStroke(coatGradient(-26, -10));
-  ctx.save();
-  ctx.clip();
-  brindle(-5, -19, 22, 14);
-  // White chest and belly
-  ctx.fillStyle = D.white;
-  ctx.beginPath();
-  ctx.ellipse(9, -14, 9, 7.5, 0, 0, Math.PI * 2);
-  ctx.ellipse(-2, -10.5, 12, 3, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  ctx.restore();
-
-  // Near legs: white front legs, brindle back legs with white paws
-  drawDogLeg(11, -13, swing, D.white, D.white);
-  drawDogLeg(-10, -13, -swing, D.coatLight, D.white);
-
-  ctx.save();
-  ctx.translate(0, bob);
-  // Neck
-  ctx.fillStyle = D.white;
-  ctx.beginPath();
-  ctx.ellipse(12, -24, 5, 6.5, -0.4, 0, Math.PI * 2);
-  ctx.fill();
-  drawDogHead(15, -31);
-  ctx.restore();
-}
-
-// Lying down on the couch like in the photo: legs tucked, head up.
-function drawDogLying() {
-  const D = DOG_LOOK;
-  const breathe = 1 + Math.sin(dog.wagTime * 2.2) * 0.025;
-  const wag = Math.sin(dog.wagTime * 3) * 1.5;
-
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
-  ctx.beginPath();
-  ctx.ellipse(-1, 0, 22, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  drawDogTail(-18, -4, wag);
-  ctx.save();
-  ctx.scale(1, breathe);
-  ctx.beginPath();
-  ctx.ellipse(-3, -8, 18, 8, 0, 0, Math.PI * 2);
-  dogFillStroke(coatGradient(-16, 0));
-  ctx.save();
-  ctx.clip();
-  brindle(-7, -9, 22, 14);
-  ctx.fillStyle = D.white;
-  ctx.beginPath();
-  ctx.ellipse(9, -6, 8, 7, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  // Back haunch
-  ctx.beginPath();
-  ctx.ellipse(-11, -7, 8, 6.5, 0, 0, Math.PI * 2);
-  dogFillStroke(D.coatLight);
-  brindle(-11, -7, 10, 9);
-  ctx.restore();
-  // Tucked paws
-  for (const [px, py] of [[-4, -1.5], [12, -1.5], [17, -2]]) {
-    ctx.beginPath();
-    ctx.ellipse(px, py, 3.6, 2, 0, 0, Math.PI * 2);
-    dogFillStroke(D.white, 1);
-  }
-  // Neck and head
-  ctx.fillStyle = D.white;
-  ctx.beginPath();
-  ctx.ellipse(11, -13, 5, 6, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-  drawDogHead(13, -20);
-}
 
 function drawDog() {
+  if (!spriteReady(dogImg)) return;
+  const pose = dogPose();
+  const f = DOG_FRAMES[pose.name];
+  const [fx, fy, fw, fh] = f.r;
+  // Mirror when the art faces the other way from where she should look.
+  const mirror = f.headRight !== undefined && pose.left !== undefined && pose.left === f.headRight;
   let lift = 0;
   if (dog.hop) lift = Math.sin(dog.hop.t * Math.PI) * 22;
+  // A little breathing on the couch and while lying or asleep
+  const resting = pose.name === 'lie' || pose.name === 'sleep';
+  const breathe = resting ? 1 + Math.sin(dog.wagTime * 2.2) * 0.02 : 1;
+
   ctx.save();
   ctx.translate(dog.x, dog.y);
   ctx.scale(room.scale, room.scale);
-
   if (dog.state !== 'couch') {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.beginPath();
-    ctx.ellipse(0, 0, 22 * (1 - lift / 60), 4.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, (fw / 4) * (1 - lift / 60), 5, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-
   ctx.translate(0, -lift);
-  ctx.scale(dog.flip ? -DOG_SCALE : DOG_SCALE, DOG_SCALE);
-  ctx.lineJoin = 'round';
-  if (dog.state === 'couch') drawDogLying();
-  else drawDogStanding();
+  ctx.scale(mirror ? -0.5 : 0.5, 0.5 * breathe);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(dogImg, fx, fy, fw, fh, -fw / 2, -fh, fw, fh);
   ctx.restore();
 }
 
@@ -1204,6 +1098,7 @@ function giveKiss() {
     kiss.progress = 0;
     kiss.celebrate = CELEBRATE_TIME;
     kiss.cooldown = KISS_COOLDOWN;
+    exciteDog();
     kiss.burstLeft = 22;
   }
 }
@@ -1324,8 +1219,8 @@ function drawHim() {
 function drawKissHud() {
   if (room.id !== 'apartment' || kiss.cooldown > 0 || player.seat) return;
   if (!nearHim() && kiss.progress === 0) return;
-  const sx = HIM.x * scale;
-  const sy = (HIM.y - HIM.h * HIM.scale - 6) * scale;
+  const sx = toScreenX(HIM.x);
+  const sy = toScreenY(HIM.y - HIM.h * HIM.scale - 6);
   const w = 96;
   const h = 12;
   const bx = sx - w / 2;
@@ -1369,7 +1264,12 @@ function drawActors() {
 }
 
 function render() {
-  ctx.clearRect(0, 0, room.w, room.h);
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#1c1915';
+  ctx.fillRect(0, 0, viewW, viewH);
+  // World space: map pixels, centred on the camera
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (viewW / 2 - cam.x * scale), dpr * (viewH / 2 - cam.y * scale));
   if (room.img.complete && room.img.naturalWidth) {
     ctx.drawImage(room.img, 0, 0, room.w, room.h);
   }
