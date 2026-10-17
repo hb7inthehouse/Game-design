@@ -116,8 +116,8 @@ const READ_DECAY = 0.08; // bar drains this much per second when you stop
 const CHAPTER_POP_TIME = 1.8; // seconds "Chapter Complete" stays up
 
 const PLAYER_RADIUS = 20; // footprint around her feet
-const WALK_SPEED = 220; // image px per second
-const RUN_SPEED = 400;
+const WALK_SPEED = 165; // map px per second: an easy walking pace
+const RUN_SPEED = 310;
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -455,7 +455,7 @@ function updatePlayer(dt) {
   // Move each axis separately so the player slides along walls/furniture.
   if (isFree(player.x + mx, player.y)) player.x += mx;
   if (isFree(player.x, player.y + my)) player.y += my;
-  player.stride += step / room.scale;
+  player.stride += step / room.scale / (running ? Math.sqrt(RUN_SPEED / WALK_SPEED) : 1);
 
   player.facing = Math.atan2(dy, dx);
   player.walkTime += dt * (running ? 1.8 : 1);
@@ -548,7 +548,7 @@ const HER_FRAMES = {
   couchBackLeft: { r: [308, 692, 168, 259], ax: 127, ay: 188 },
 };
 const HER_WALK = ['walk1', 'walk2', 'walk3', 'walk4', 'walk5', 'walk6', 'walk7', 'walk8', 'walk9'];
-const HER_STEP = 10; // map px travelled per walk frame
+const HER_STEP = 20; // map px travelled per walk frame (~8 frames a second walking)
 const HER_LEG_LIFT = 14; // sprite px a foot rises when walking straight up or down
 
 // Idle routine: after a short pause she strikes a pose now and then, and after a
@@ -818,7 +818,7 @@ const DOG_FRAMES = {
   sleep: { r: [2134, 0, 123, 69], headRight: false },
 };
 const DOG_WALK = ['walk1', 'walk2', 'walk3', 'walk4', 'walk5', 'walk6', 'walk7'];
-const DOG_STEP = 7; // map px travelled per walk frame
+const DOG_STEP = 16; // map px travelled per walk frame (~10 frames a second at her pace)
 // How long she waits (seconds) before settling into each idle pose
 const DOG_SIT_AFTER = 1.2;
 const DOG_LIE_AFTER = 7;
@@ -827,7 +827,7 @@ const DOG_COUCH_SLEEP_AFTER = 12;
 const DOG_BOW_TIME = 1.4;
 
 const DOG_FOLLOW_DIST = 70; // how far behind (along her path) the dog trails
-const DOG_MAX_SPEED = 480;
+const DOG_MAX_SPEED = 380;
 const HOP_TIME = 0.35;
 
 const dog = {
@@ -859,7 +859,8 @@ function moveDogToward(tx, ty, speed, dt) {
   dog.y += (dy / d) * step;
   if (Math.abs(dx) > 0.5) dog.flip = dx < 0;
   dog.walkTime += dt * (speed / 260);
-  dog.stride += step / room.scale;
+  // Faster means longer strides, not just quicker legs
+  dog.stride += step / room.scale / Math.sqrt(Math.max(1, speed / (WALK_SPEED * room.scale)));
   return step >= d - 0.01;
 }
 
@@ -932,7 +933,7 @@ function updateDog(dt) {
 
   const excess = pathLen - DOG_FOLLOW_DIST * room.scale;
   if (excess > 0) {
-    const speed = Math.min(DOG_MAX_SPEED * room.scale, 120 + excess * 5);
+    const speed = Math.min(DOG_MAX_SPEED * room.scale, 100 + excess * 4);
     moveDogToward(trail[0].x, trail[0].y, speed, dt);
   } else {
     dog.walkTime = 0;
