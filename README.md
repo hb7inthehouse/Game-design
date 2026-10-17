@@ -25,6 +25,8 @@ A hosted copy runs inside the Claude app: https://claude.ai/artifact/3jkuJWVcY6z
 
 Her dog tags along behind her and hops up to lie beside her whenever she sits down to read.
 
+He stands in the top-right corner: walk up and mash E (or tap KISS) to fill the kiss bar. When it fills he jumps with his arms up and hearts float away, then there's a hidden 5 second cooldown before he'll take more.
+
 ## Tweaking
 
 Everything lives in `game.js`. Walls are the `FLOOR` rectangle and furniture is in `OBSTACLES`, both in map-image pixels (1312 x 1199). Press **H** in-game to see them.

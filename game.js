@@ -19,6 +19,7 @@ const OBSTACLES = [
   { name: 'bookshelf', x: 1036, y: 390, w: 130, h: 558 },
   { name: 'side table', x: 1044, y: 160, w: 130, h: 132 },
   { name: 'tv stand', x: 198, y: 1020, w: 460, h: 110 },
+  { name: 'him', x: 965, y: 314, w: 40, h: 24 }, // matches HIM.x / HIM.y
 ];
 
 // Places to sit on the sofa. (x, y) is where her hips rest; `approach` is the
@@ -222,6 +223,10 @@ function action() {
     }
     return;
   }
+  if (canKiss()) {
+    giveKiss();
+    return;
+  }
   const seat = nearestSeat();
   if (seat) {
     player.seat = seat;
@@ -242,6 +247,7 @@ function standUp(dx, dy) {
 function updateActionButton() {
   let label = '';
   if (player.seat) label = 'READ';
+  else if (canKiss()) label = 'KISS';
   else if (nearestSeat()) label = 'SIT';
   if (actionBtn.textContent !== label) actionBtn.textContent = label;
   actionBtn.disabled = !label;
@@ -252,6 +258,7 @@ function updateActionButton() {
 function update(dt) {
   updatePlayer(dt);
   updateDog(dt);
+  updateKiss(dt);
 }
 
 function updatePlayer(dt) {
@@ -600,6 +607,7 @@ function drawHud() {
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
     pill(isTouch ? 'Tap SIT to read' : 'Press E to sit and read', sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
+  drawKissHud();
   ctx.restore();
 }
 
@@ -980,17 +988,234 @@ function drawDog() {
   ctx.restore();
 }
 
-// Draw the player and the dog back to front so whoever is lower on screen is in front.
-function drawActors() {
-  const playerY = player.seat ? player.seat.y : player.y;
-  const dogY = dog.hop ? Math.max(dog.hop.from.y, dog.hop.to.y) : dog.y;
-  if (dogY < playerY) {
-    drawDog();
-    drawPlayer();
-  } else {
-    drawPlayer();
-    drawDog();
+// ---- Him -------------------------------------------------------------------
+// Stands in the top-right corner. Walk up and mash the action button to give
+// him kisses; when the bar fills he jumps with his arms up while hearts float
+// away. Afterwards there's a quiet 5 second cooldown before he'll take more.
+
+const HIM = {
+  x: 985, // his feet, in map px
+  y: 330,
+  w: 137, // sprite px (one layer of the parts image)
+  h: 352,
+  scale: 0.5,
+  centerX: 68.5,
+  range: 95, // how close she needs to be to kiss him
+  // Shoulder pivots (sprite px) for raising the arms
+  shoulderL: { x: 20, y: 104 },
+  shoulderR: { x: 117, y: 104 },
+};
+const HIM_PARTS = { body: 0, armL: 1, armR: 2 };
+
+const KISS_PER_PRESS = 0.08; // ~13 kisses fill the bar
+const KISS_DECAY = 0.1;
+const KISS_COOLDOWN = 5; // seconds, not shown on screen
+const CELEBRATE_TIME = 2.4;
+
+const himImg = new Image();
+himImg.src = 'assets/him-parts.png';
+
+const kiss = {
+  progress: 0,
+  cooldown: 0,
+  celebrate: 0, // counts down while he's jumping
+  burstLeft: 0, // hearts still to release in the celebration
+};
+const hearts = [];
+
+function nearHim() {
+  return Math.hypot(player.x - HIM.x, player.y - HIM.y) < HIM.range;
+}
+
+function canKiss() {
+  return !player.seat && kiss.cooldown <= 0 && nearHim();
+}
+
+function addHeart(x, y, big) {
+  hearts.push({
+    x,
+    y,
+    vx: (Math.random() - 0.5) * (big ? 50 : 20),
+    vy: -(big ? 55 + Math.random() * 45 : 45 + Math.random() * 15),
+    t: 0,
+    life: big ? 1.8 + Math.random() * 0.8 : 1.1,
+    size: big ? 2.2 + Math.random() * 1.2 : 1.8,
+    phase: Math.random() * Math.PI * 2,
+  });
+}
+
+function giveKiss() {
+  player.facing = Math.atan2(HIM.y - player.y, HIM.x - player.x);
+  player.walkTime = 0;
+  // A little heart pops up between them with every kiss
+  addHeart((player.x + HIM.x) / 2, Math.min(player.y, HIM.y) - 150, false);
+  kiss.progress = Math.min(1, kiss.progress + KISS_PER_PRESS);
+  if (kiss.progress >= 1) {
+    kiss.progress = 0;
+    kiss.celebrate = CELEBRATE_TIME;
+    kiss.cooldown = KISS_COOLDOWN;
+    kiss.burstLeft = 22;
   }
+}
+
+function updateKiss(dt) {
+  kiss.cooldown = Math.max(0, kiss.cooldown - dt);
+  kiss.celebrate = Math.max(0, kiss.celebrate - dt);
+  if (kiss.progress > 0) kiss.progress = Math.max(0, kiss.progress - KISS_DECAY * dt);
+
+  // Release the celebration hearts over the first part of the jump
+  if (kiss.burstLeft > 0) {
+    const due = Math.ceil((kiss.celebrate - CELEBRATE_TIME * 0.35) / (CELEBRATE_TIME * 0.65) * 22);
+    while (kiss.burstLeft > Math.max(0, due)) {
+      addHeart(HIM.x + (Math.random() - 0.5) * 50, HIM.y - 175 + Math.random() * 30, true);
+      kiss.burstLeft -= 1;
+    }
+  }
+
+  for (let i = hearts.length - 1; i >= 0; i--) {
+    const h = hearts[i];
+    h.t += dt;
+    h.x += (h.vx + Math.sin(h.t * 4 + h.phase) * 18) * dt;
+    h.y += h.vy * dt;
+    h.vy *= 1 - 0.25 * dt; // drift up, slowing gently
+    if (h.t >= h.life) hearts.splice(i, 1);
+  }
+}
+
+// Pixel heart, 7 x 6 cells
+const HEART_ROWS = [
+  '.##.##.',
+  '#######',
+  '#######',
+  '.#####.',
+  '..###..',
+  '...#...',
+];
+
+function drawHeart(cx, cy, cell, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const x0 = cx - 3.5 * cell;
+  const y0 = cy - 3 * cell;
+  // Dark edge first, slightly larger, then the pink fill and a highlight
+  ctx.fillStyle = '#5a1530';
+  HEART_ROWS.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) {
+      if (row[c] === '#') ctx.fillRect(x0 + c * cell - cell * 0.35, y0 + r * cell - cell * 0.35, cell * 1.7, cell * 1.7);
+    }
+  });
+  ctx.fillStyle = '#ff5c8d';
+  HEART_ROWS.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) {
+      if (row[c] === '#') ctx.fillRect(x0 + c * cell, y0 + r * cell, cell + 0.2, cell + 0.2);
+    }
+  });
+  ctx.fillStyle = '#ffd1df';
+  ctx.fillRect(x0 + cell, y0 + cell, cell, cell);
+  ctx.restore();
+}
+
+function drawHearts() {
+  for (const h of hearts) {
+    const k = h.t / h.life;
+    const alpha = k < 0.15 ? k / 0.15 : k > 0.55 ? 1 - (k - 0.55) / 0.45 : 1;
+    const grow = Math.min(1, 0.5 + k * 3);
+    drawHeart(h.x, h.y, h.size * grow, Math.max(0, alpha));
+  }
+}
+
+function drawHimArm(layer, pivot, angle) {
+  ctx.save();
+  ctx.translate(pivot.x, pivot.y);
+  ctx.rotate(angle);
+  ctx.translate(-pivot.x, -pivot.y);
+  ctx.drawImage(himImg, layer * HIM.w, 0, HIM.w, HIM.h, 0, 0, HIM.w, HIM.h);
+  ctx.restore();
+}
+
+function drawHim() {
+  if (!spriteReady(himImg)) return;
+  let hop = 0;
+  let squash = 0;
+  let raise = 0;
+  let wave = 0;
+  if (kiss.celebrate > 0) {
+    const t = CELEBRATE_TIME - kiss.celebrate;
+    const hops = 4;
+    const f = ((t / CELEBRATE_TIME) * hops) % 1;
+    hop = 4 * f * (1 - f) * 20; // map px off the floor
+    squash = f < 0.12 ? 1 - f / 0.12 : 0; // landing squish
+    // Arms go up fast, wave while he bounces, and come down at the end
+    raise = Math.min(1, t / 0.15, kiss.celebrate / 0.25);
+    wave = Math.sin(t * 16) * 0.15;
+  }
+
+  ctx.save();
+  ctx.translate(HIM.x, HIM.y);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 24 - hop * 0.4, 6 - hop * 0.1, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.translate(0, -hop);
+  ctx.scale(HIM.scale * (1 + squash * 0.06), HIM.scale * (1 - squash * 0.08));
+  ctx.translate(-HIM.centerX, -HIM.h);
+  ctx.imageSmoothingQuality = 'high';
+
+  // Raised: arms swing up past the head (about 160 degrees), waving a little.
+  const up = 2.75 * raise;
+  drawHimArm(HIM_PARTS.armL, HIM.shoulderL, up + wave * raise);
+  drawHimArm(HIM_PARTS.armR, HIM.shoulderR, -up + wave * raise);
+  ctx.drawImage(himImg, HIM_PARTS.body * HIM.w, 0, HIM.w, HIM.h, 0, 0, HIM.w, HIM.h);
+  ctx.restore();
+}
+
+// Bar over his head while kissing; nothing at all during the cooldown.
+function drawKissHud() {
+  if (kiss.cooldown > 0 || player.seat) return;
+  if (!nearHim() && kiss.progress === 0) return;
+  const sx = HIM.x * scale;
+  const sy = (HIM.y - HIM.h * HIM.scale - 6) * scale;
+  const w = 96;
+  const h = 12;
+  const bx = sx - w / 2;
+  const by = sy - 22;
+
+  ctx.fillStyle = 'rgba(28, 25, 21, 0.8)';
+  ctx.beginPath();
+  ctx.roundRect(bx - 2, by - 2, w + 4, h + 4, 8);
+  ctx.fill();
+  ctx.fillStyle = '#3a2b33';
+  ctx.beginPath();
+  ctx.roundRect(bx, by, w, h, 6);
+  ctx.fill();
+  if (kiss.progress > 0) {
+    const g = ctx.createLinearGradient(bx, 0, bx + w, 0);
+    g.addColorStop(0, '#ff7aa2');
+    g.addColorStop(1, '#ffb3c8');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, Math.max(h, w * kiss.progress), h, 6);
+    ctx.fill();
+  }
+  // Heart badge on the left end of the bar
+  drawHeart(bx - 2, by + h / 2, 2, 1);
+
+  if (kiss.progress === 0 && nearHim()) {
+    ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    pill(isTouch ? 'Tap KISS fast' : 'Mash E to give kisses', sx, by + h + 16, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
+  }
+}
+
+// Draw everyone back to front so whoever is lower on screen is in front.
+function drawActors() {
+  const actors = [
+    { y: player.seat ? player.seat.y : player.y, draw: drawPlayer },
+    { y: dog.hop ? Math.max(dog.hop.from.y, dog.hop.to.y) : dog.y, draw: drawDog },
+    { y: HIM.y, draw: drawHim },
+  ];
+  actors.sort((a, b) => a.y - b.y);
+  for (const a of actors) a.draw();
 }
 
 function render() {
@@ -1004,6 +1229,7 @@ function render() {
   if (fanReady && player.seat) ctx.drawImage(fanImg, FAN_POS.x, FAN_POS.y);
   drawActors();
   if (fanReady && !player.seat) ctx.drawImage(fanImg, FAN_POS.x, FAN_POS.y);
+  drawHearts();
   if (showHitboxes) drawHitboxes();
   drawHud();
 }
