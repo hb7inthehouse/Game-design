@@ -31,7 +31,6 @@ const ROOMS = {
       { name: 'kitchen island', x: 815, y: 340, w: 195, h: 408 },
       { name: 'stool (top)', x: 748, y: 385, w: 70, h: 115 },
       { name: 'stool (bottom)', x: 748, y: 528, w: 70, h: 114 },
-      { name: 'him', x: 1112, y: 455, w: 40, h: 24 }, // matches HIM.x / HIM.y
     ],
     // (x, y) is where her hips rest; `approach` is the floor spot she sits down
     // from and stands back up to. `dog` is where the dog lies next to her
@@ -108,6 +107,22 @@ for (const rm of Object.values(ROOMS)) {
 }
 let room = ROOMS[window.claude?.hot?.data?.room] ?? ROOMS.apartment;
 
+// The character you're not playing waits where you left them. Kiss them until
+// the bar fills and you swap: you play as them, and they wait in your place.
+const partner = {
+  who: 'him',
+  room: 'apartment',
+  x: 1132, // in the kitchen, between the island and the counters
+  y: 478,
+  gait: 0,
+  running: false,
+};
+const PARTNER_RANGE = 95; // how close you need to be to kiss them
+
+function partnerBox() {
+  return { name: 'partner', x: partner.x - 20, y: partner.y - 16, w: 40, h: 24 };
+}
+
 const SIT_RANGE = 80;
 
 // Reading: spam the action button to fill the bar and finish a chapter.
@@ -128,6 +143,7 @@ const player = {
   x: 600,
   y: 440,
   facing: saved?.facing ?? Math.PI / 2, // radians; starts facing down, toward the viewer
+  who: 'her', // which character you're playing
   walkTime: 0,
   seat: null, // one of the room's seats while sitting
   stride: 0, // distance walked, drives stepping when walking up or down
@@ -276,6 +292,7 @@ function isFree(x, y) {
   // Edges of her footprint all have to be on the floor
   const onFloor = (px, py) => room.floor.some((a) => px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h);
   if (![[x, y], [x - r, y], [x + r, y], [x, y - r], [x, y + r]].every(([px, py]) => onFloor(px, py))) return false;
+  if (partner.room === room.id && circleHitsRect(x, y, r, partnerBox())) return false;
   return !room.obstacles.some((o) => circleHitsRect(x, y, r, o));
 }
 
@@ -416,7 +433,7 @@ function updatePlayer(dt) {
   player.wave = Math.max(0, player.wave - dt);
   player.cheer = Math.max(0, player.cheer - dt);
   // Wave hello when she walks up to him
-  const near = room.id === 'apartment' && nearHim();
+  const near = nearPartner();
   if (near && !player.nearHim && kiss.cooldown <= 0) player.wave = WAVE_TIME;
   player.nearHim = near;
   updateActionButton();
@@ -519,8 +536,6 @@ resize();
 // the seat (bottom of her shorts) for couch poses. Poses that only exist facing
 // one way are mirrored for the other side.
 
-const herImg = new Image();
-herImg.src = 'assets/her.png';
 const HER_FRAMES = {
   front: { r: [0, 0, 118, 344], ax: 57, ay: 344, hem: 210 },
   frontRight: { r: [120, 0, 104, 344], ax: 44, ay: 344 },
@@ -551,22 +566,69 @@ const HER_FRAMES = {
   couchBack: { r: [189, 692, 117, 195], ax: 56, ay: 190 },
   couchBackLeft: { r: [308, 692, 168, 259], ax: 127, ay: 188 },
 };
-// Walking sideways is animated from her side-view pose split into layers
-// (assets/her-walk.png, each layer 90 x 342 like the 'right' pose): upper body,
-// thigh, shin + shoe, and darker copies of the leg for the far side. Legs swing
-// from the hip and bend at the knee; she dips as her feet spread and rises as
-// they pass, which is what gives a walk its weight.
-const herWalkImg = new Image();
-herWalkImg.src = 'assets/her-walk.png';
-const SIDE = {
-  w: 90, h: 342, ax: 54, ay: 342,
-  hip: { x: 53, y: 200 },
-  knee: { x: 51, y: 252 },
-  thigh: 52, // hip to knee, sprite px
-  shin: 90, // knee to sole
+const HIM_FRAMES = {
+  front: { r: [0, 0, 141, 356], ax: 69, ay: 356, hem: 247 },
+  frontRight: { r: [143, 0, 129, 357], ax: 58, ay: 357 },
+  right: { r: [274, 0, 108, 365], ax: 52, ay: 365 },
+  backRight: { r: [384, 0, 123, 366], ax: 62, ay: 366 },
+  back: { r: [509, 0, 137, 360], ax: 68, ay: 360, hem: 248 },
+  backLeft: { r: [648, 0, 123, 366], ax: 56, ay: 366 },
+  idle: { r: [773, 0, 141, 353], ax: 70, ay: 353 },
+  happy: { r: [916, 0, 222, 352], ax: 110, ay: 352 },
+  armsCrossed: { r: [1140, 0, 138, 357], ax: 68, ay: 357 },
+  wave: { r: [1280, 0, 166, 357], ax: 95, ay: 357 },
+  phone: { r: [1448, 0, 154, 363], ax: 69, ay: 363 },
+  floorSit: { r: [1604, 0, 196, 263], ax: 97, ay: 263 },
+  crouch: { r: [1802, 0, 165, 264], ax: 89, ay: 264 },
 };
+
+function loadImage(src) {
+  const img = new Image();
+  img.src = src;
+  return img;
+}
+
+// Walking sideways is animated from each character's side-view pose split into
+// layers (assets/*-walk.png, each layer the size of the 'right' pose): upper
+// body, thigh, shin + shoe, darker copies of the leg for the far side, then the
+// near arm and a darker far arm. Legs swing from the hip and bend at the knee;
+// the body dips as the feet spread and rises as they pass, and the arms swing
+// against the legs.
 const SIDE_LAYERS = { upper: 0, thigh: 1, shin: 2, thighFar: 3, shinFar: 4, arm: 5, armFar: 6 };
-const SHOULDER = { x: 46, y: 134 };
+const CHARS = {
+  her: {
+    name: 'her',
+    img: loadImage('assets/her.png'),
+    frames: HER_FRAMES,
+    walkImg: loadImage('assets/her-walk.png'),
+    side: {
+      w: 90, h: 342, ax: 54, ay: 342,
+      hip: { x: 53, y: 200 },
+      knee: { x: 51, y: 252 },
+      shoulder: { x: 46, y: 134 },
+      thigh: 52, // hip to knee, sprite px
+      shin: 90, // knee to sole
+    },
+    idlePoses: ['happy', 'peace', 'armsCrossed', 'phone', 'idle'],
+    backIdle: 'backpack', // idle pose while facing away
+  },
+  him: {
+    name: 'him',
+    img: loadImage('assets/him.png'),
+    frames: HIM_FRAMES,
+    walkImg: loadImage('assets/him-walk.png'),
+    side: {
+      w: 108, h: 365, ax: 52, ay: 365,
+      hip: { x: 52, y: 235 },
+      knee: { x: 50, y: 290 },
+      shoulder: { x: 52, y: 142 },
+      thigh: 55,
+      shin: 75,
+    },
+    idlePoses: ['armsCrossed', 'phone', 'crouch', 'happy', 'idle'],
+    backIdle: null,
+  },
+};
 const GAIT = {
   walkCycle: 150, // map px per full stride (two steps)
   runCycle: 230,
@@ -579,14 +641,13 @@ const GAIT = {
   lean: 0.035, // leans into the walk a little
   runLean: 0.08,
 };
-const HER_LEG_LIFT = 14; // sprite px a foot rises when walking straight up or down
+const LEG_LIFT = 14; // sprite px a foot rises when walking straight up or down
 
-// Idle routine: after a short pause she strikes a pose now and then, and after a
-// long wait she sits down on the floor.
+// Idle routine: after a short pause they strike a pose now and then, and after
+// a long wait they sit down on the floor.
 const IDLE_POSE_AFTER = 4;
 const IDLE_POSE_EVERY = 6; // seconds per cycle once posing starts
 const IDLE_POSE_HOLD = 3.5; // seconds of each cycle spent in the pose
-const IDLE_POSES = ['happy', 'peace', 'armsCrossed', 'phone', 'idle'];
 const FLOOR_SIT_AFTER = 28;
 const WAVE_TIME = 1.6;
 const CHEER_TIME = 2.2;
@@ -613,19 +674,21 @@ function standingPose(facing) {
   }
 }
 
-// Which way is she looking when she faces mostly away from the viewer?
+// Mostly facing away from the viewer?
 function facingAway(facing) {
   return Math.sin(facing) < -0.38;
 }
 
+// Pose for the character you're playing.
 function playerPose() {
-  if (player.seat) return seatedPose(player.seat);
+  const ch = CHARS[player.who];
+  if (player.seat) return seatedPose(ch, player.seat);
   if (player.walkTime > 0) {
     if (player.moveDx !== 0) return { name: 'right', mirror: player.moveDx < 0, side: true };
     return { name: player.moveDy < 0 ? 'back' : 'front', stepping: true };
   }
   if (player.cheer > 0) return { name: 'happy' };
-  if (player.wave > 0) return { name: 'wave', mirror: HIM.x < player.x };
+  if (player.wave > 0) return { name: 'wave', mirror: partner.x < player.x };
   const t = player.idleTime;
   if (t > FLOOR_SIT_AFTER) return { name: 'floorSit' };
   if (t > IDLE_POSE_AFTER) {
@@ -633,18 +696,34 @@ function playerPose() {
     const inPose = (t - IDLE_POSE_AFTER) % IDLE_POSE_EVERY < IDLE_POSE_HOLD;
     if (inPose) {
       // Facing away, she alternates between showing her backpack and turning around
-      if (facingAway(player.facing) && cycle % 2 === 0) return { name: 'backpack' };
-      return { name: IDLE_POSES[(cycle * 3 + 1) % IDLE_POSES.length] };
+      if (facingAway(player.facing) && ch.backIdle && cycle % 2 === 0) return { name: ch.backIdle };
+      return { name: ch.idlePoses[(cycle * 3 + 1) % ch.idlePoses.length] };
     }
   }
   return standingPose(player.facing);
 }
 
+// The character you're not playing: cheers when the kiss bar fills, otherwise
+// turns to watch you when you're nearby.
+function partnerPose() {
+  if (kiss.celebrate > 0) return { name: 'happy' };
+  if (partner.room === room.id && Math.hypot(player.x - partner.x, player.y - partner.y) < 260 * room.scale) {
+    return standingPose(Math.atan2(player.y - partner.y, player.x - partner.x));
+  }
+  return { name: 'front' };
+}
+
 // On a seat she faces the way the seat faces, glances at the dog when she
 // stops turning pages, and turns to the viewer when she finishes a chapter.
-function seatedPose(seat) {
-  const dogLeft = dog.x < seat.x;
+// He has no couch art: facing away he shows his back from the waist up,
+// otherwise he sits cross-legged.
+function seatedPose(ch, seat) {
   const celebrating = reading.popTime > 0;
+  if (ch.name === 'him') {
+    if (seat.view === 'back' && !celebrating) return { name: 'back', waistUp: true };
+    return { name: 'floorSit' };
+  }
+  const dogLeft = dog.x < seat.x;
   const glancing = !celebrating && reading.sinceTurn > GLANCE_AFTER && dog.state === 'couch';
   if (seat.view === 'back') {
     if (celebrating) return { name: 'couchFront' };
@@ -661,73 +740,100 @@ function seatedPose(seat) {
 }
 
 // Draw part of a pose: [sx, sy, sw, sh] within the pose, at sprite offset (dx, dy).
-function blitHer(f, sx, sy, sw, sh, dx, dy) {
-  ctx.drawImage(herImg, f.r[0] + sx, f.r[1] + sy, sw, sh, sx - f.ax + dx, sy - f.ay + dy, sw, sh);
+function blitPose(ch, f, sx, sy, sw, sh, dx, dy) {
+  ctx.drawImage(ch.img, f.r[0] + sx, f.r[1] + sy, sw, sh, sx - f.ax + dx, sy - f.ay + dy, sw, sh);
 }
 
-function drawPlayer() {
-  if (!spriteReady(herImg)) return;
-  const pose = playerPose();
-  const f = HER_FRAMES[pose.name];
-  const at = player.seat ?? player;
+// Draw a character standing at (x, y). `actor` supplies the walk state.
+function drawCharacter(ch, pose, x, y, actor, opts = {}) {
+  if (!spriteReady(ch.img)) return;
+  const f = ch.frames[pose.name];
   const [, , w, h] = f.r;
 
   ctx.save();
-  ctx.translate(at.x, at.y);
+  ctx.translate(x, y);
   ctx.scale(room.scale, room.scale);
-  if (!player.seat) {
+  if (!opts.seated) {
+    const lift = opts.hop ?? 0;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
     ctx.beginPath();
-    ctx.ellipse(0, 0, pose.name === 'floorSit' ? 32 : 22, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, (pose.name === 'floorSit' ? 32 : 22) - lift * 0.3, 6, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.translate(0, -lift);
   }
-  ctx.scale(pose.mirror ? -0.5 : 0.5, 0.5);
+  const squash = opts.squash ?? 0;
+  ctx.scale((pose.mirror ? -0.5 : 0.5) * (1 + squash * 0.06), 0.5 * (1 - squash * 0.08));
   ctx.imageSmoothingQuality = 'high';
 
   if (pose.side) {
-    drawSideWalk();
+    drawSideWalk(ch, actor);
   } else if (pose.stepping) {
     // Walking straight toward or away from the viewer: step each leg in turn.
-    const s = Math.sin(player.gait * Math.PI * 2); // same rhythm as the side-on walk
-    const liftL = Math.max(0, s) * HER_LEG_LIFT;
-    const liftR = Math.max(0, -s) * HER_LEG_LIFT;
+    const s = Math.sin(actor.gait * Math.PI * 2); // same rhythm as the side-on walk
+    const liftL = Math.max(0, s) * LEG_LIFT;
+    const liftR = Math.max(0, -s) * LEG_LIFT;
     const bob = -Math.abs(s) * 3;
     const legTop = f.hem - 16;
-    blitHer(f, 0, legTop, f.ax, h - legTop, 0, -liftL);
-    blitHer(f, f.ax, legTop, w - f.ax, h - legTop, 0, -liftR);
-    blitHer(f, 0, 0, w, f.hem, 0, bob);
+    blitPose(ch, f, 0, legTop, f.ax, h - legTop, 0, -liftL);
+    blitPose(ch, f, f.ax, legTop, w - f.ax, h - legTop, 0, -liftR);
+    blitPose(ch, f, 0, 0, w, f.hem, 0, bob);
+  } else if (pose.waistUp) {
+    // Sitting with his back to us: only the part above the cushion shows.
+    const cut = f.hem - 18;
+    blitPose(ch, f, 0, 0, w, cut, 0, f.ay - cut + (opts.nudge ?? 0));
   } else {
-    // A small settle each time she turns a page
-    const nudge = player.seat && reading.flipTime > 0 ? Math.sin((reading.flipTime / 0.25) * Math.PI) * 3 : 0;
-    blitHer(f, 0, 0, w, h, 0, nudge);
+    blitPose(ch, f, 0, 0, w, h, 0, opts.nudge ?? 0);
   }
   ctx.restore();
 }
 
-function sideLayer(layer) {
-  ctx.drawImage(herWalkImg, layer * SIDE.w, 0, SIDE.w, SIDE.h, 0, 0, SIDE.w, SIDE.h);
+function drawPlayer() {
+  const ch = CHARS[player.who];
+  const pose = playerPose();
+  const at = player.seat ?? player;
+  // A small settle each time she turns a page
+  const nudge = player.seat && reading.flipTime > 0 ? Math.sin((reading.flipTime / 0.25) * Math.PI) * 3 : 0;
+  drawCharacter(ch, pose, at.x, at.y, player, { seated: !!player.seat, nudge });
 }
 
-function drawSideLeg(thighLayer, shinLayer, hipAngle, kneeAngle) {
-  const { hip, knee } = SIDE;
+function drawPartner() {
+  let hop = 0;
+  let squash = 0;
+  if (kiss.celebrate > 0) {
+    const t = CELEBRATE_TIME - kiss.celebrate;
+    const f = ((t / CELEBRATE_TIME) * 4) % 1; // four hops
+    hop = 4 * f * (1 - f) * 20;
+    squash = f < 0.12 ? 1 - f / 0.12 : 0; // landing squish
+  }
+  drawCharacter(CHARS[partner.who], partnerPose(), partner.x, partner.y, partner, { hop, squash });
+}
+
+function sideLayer(ch, layer) {
+  const s = ch.side;
+  ctx.drawImage(ch.walkImg, layer * s.w, 0, s.w, s.h, 0, 0, s.w, s.h);
+}
+
+function drawSideLeg(ch, thighLayer, shinLayer, hipAngle, kneeAngle) {
+  const { hip, knee } = ch.side;
   ctx.save();
   ctx.translate(hip.x, hip.y);
   ctx.rotate(hipAngle);
   ctx.translate(-hip.x, -hip.y);
-  sideLayer(thighLayer);
+  sideLayer(ch, thighLayer);
   ctx.translate(knee.x, knee.y);
   ctx.rotate(kneeAngle);
   ctx.translate(-knee.x, -knee.y);
-  sideLayer(shinLayer);
+  sideLayer(ch, shinLayer);
   ctx.restore();
 }
 
-function drawSideArm(layer, angle) {
+function drawSideArm(ch, layer, angle) {
+  const { shoulder } = ch.side;
   ctx.save();
-  ctx.translate(SHOULDER.x, SHOULDER.y);
+  ctx.translate(shoulder.x, shoulder.y);
   ctx.rotate(angle);
-  ctx.translate(-SHOULDER.x, -SHOULDER.y);
-  sideLayer(layer);
+  ctx.translate(-shoulder.x, -shoulder.y);
+  sideLayer(ch, layer);
   ctx.restore();
 }
 
@@ -741,34 +847,38 @@ function legAngles(phase, run) {
   return { hip, knee };
 }
 
-function drawSideWalk() {
-  if (!spriteReady(herWalkImg)) return;
-  const phase = player.gait * Math.PI * 2;
-  const run = player.running;
+function drawSideWalk(ch, actor) {
+  if (!spriteReady(ch.walkImg)) return;
+  const S = ch.side;
+  const phase = actor.gait * Math.PI * 2;
+  const run = actor.running;
   const near = legAngles(phase, run);
   const far = legAngles(phase + Math.PI, run);
   // Keep the lower foot on the floor: the more the legs spread, the lower the hips.
-  const footY = (a) => SIDE.thigh * Math.cos(a.hip) + SIDE.shin * Math.cos(a.hip + a.knee);
-  const drop = SIDE.thigh + SIDE.shin - Math.max(footY(near), footY(far));
-  ctx.translate(-SIDE.ax, -SIDE.ay + drop);
-  drawSideLeg(SIDE_LAYERS.thighFar, SIDE_LAYERS.shinFar, far.hip, far.knee);
-  drawSideLeg(SIDE_LAYERS.thigh, SIDE_LAYERS.shin, near.hip, near.knee);
+  const footY = (a) => S.thigh * Math.cos(a.hip) + S.shin * Math.cos(a.hip + a.knee);
+  const drop = S.thigh + S.shin - Math.max(footY(near), footY(far));
+  ctx.translate(-S.ax, -S.ay + drop);
+  drawSideLeg(ch, SIDE_LAYERS.thighFar, SIDE_LAYERS.shinFar, far.hip, far.knee);
+  drawSideLeg(ch, SIDE_LAYERS.thigh, SIDE_LAYERS.shin, near.hip, near.knee);
   ctx.save();
-  ctx.translate(SIDE.hip.x, SIDE.hip.y);
+  ctx.translate(S.hip.x, S.hip.y);
   ctx.rotate(-(run ? GAIT.runLean : GAIT.lean) - Math.abs(Math.sin(phase)) * 0.015);
-  ctx.translate(-SIDE.hip.x, -SIDE.hip.y);
+  ctx.translate(-S.hip.x, -S.hip.y);
   // Arms swing opposite their legs: the near arm goes back as the near leg steps forward.
   const armSwing = (run ? GAIT.runArm : GAIT.arm) * Math.sin(phase);
-  drawSideArm(SIDE_LAYERS.armFar, -armSwing);
-  sideLayer(SIDE_LAYERS.upper);
-  drawSideArm(SIDE_LAYERS.arm, armSwing);
+  drawSideArm(ch, SIDE_LAYERS.armFar, -armSwing);
+  sideLayer(ch, SIDE_LAYERS.upper);
+  drawSideArm(ch, SIDE_LAYERS.arm, armSwing);
   ctx.restore();
 }
 
-// Height of her current pose above its anchor, in map px (for the HUD).
+// Height of a pose above its anchor, in map px (for the HUD).
+function poseHeight(who, pose) {
+  const f = CHARS[who].frames[pose.name];
+  return (pose.waistUp ? f.hem - 18 : f.ay) * 0.5 * room.scale;
+}
 function playerHeadHeight() {
-  const f = HER_FRAMES[playerPose().name];
-  return f.ay * 0.5 * room.scale;
+  return poseHeight(player.who, playerPose());
 }
 
 function drawHitboxes() {
@@ -777,7 +887,7 @@ function drawHitboxes() {
   for (const a of room.floor) ctx.strokeRect(a.x, a.y, a.w, a.h);
   ctx.fillStyle = 'rgba(255, 40, 40, 0.25)';
   ctx.strokeStyle = 'rgba(255, 40, 40, 0.9)';
-  for (const o of room.obstacles) {
+  for (const o of partner.room === room.id ? [...room.obstacles, partnerBox()] : room.obstacles) {
     ctx.fillRect(o.x, o.y, o.w, o.h);
     ctx.strokeRect(o.x, o.y, o.w, o.h);
   }
@@ -1102,32 +1212,17 @@ function drawDog() {
   ctx.restore();
 }
 
-// ---- Him -------------------------------------------------------------------
-// Stands in the kitchen. Walk up and mash the action button to give
-// him kisses; when the bar fills he jumps with his arms up while hearts float
-// away. Afterwards there's a quiet 5 second cooldown before he'll take more.
-
-const HIM = {
-  x: 1132, // his feet, in map px: in the kitchen, between the island and the counters
-  y: 478,
-  w: 137, // sprite px (one layer of the parts image)
-  h: 352,
-  scale: 0.5,
-  centerX: 68.5,
-  range: 95, // how close she needs to be to kiss him
-  // Shoulder pivots (sprite px) for raising the arms
-  shoulderL: { x: 20, y: 104 },
-  shoulderR: { x: 117, y: 104 },
-};
-const HIM_PARTS = { body: 0, armL: 1, armR: 2 };
+// ---- Kisses ----------------------------------------------------------------
+// Walk up to whoever you're not playing and mash the action button to give
+// them kisses; when the bar fills they cheer and hop while hearts float away,
+// then you swap and play as them. Afterwards there's a quiet 5 second
+// cooldown before they'll take more.
 
 const KISS_PER_PRESS = 0.08; // ~13 kisses fill the bar
 const KISS_DECAY = 0.1;
 const KISS_COOLDOWN = 5; // seconds, not shown on screen
 const CELEBRATE_TIME = 2.4;
 
-const himImg = new Image();
-himImg.src = 'assets/him-parts.png';
 
 const kiss = {
   progress: 0,
@@ -1137,12 +1232,31 @@ const kiss = {
 };
 const hearts = [];
 
-function nearHim() {
-  return Math.hypot(player.x - HIM.x, player.y - HIM.y) < HIM.range;
+function nearPartner() {
+  return partner.room === room.id && Math.hypot(player.x - partner.x, player.y - partner.y) < PARTNER_RANGE * room.scale;
 }
 
 function canKiss() {
-  return room.id === 'apartment' && !player.seat && kiss.cooldown <= 0 && nearHim();
+  return !player.seat && kiss.cooldown <= 0 && kiss.celebrate <= 0 && nearPartner();
+}
+
+// Take control of the partner; you stay behind in their place.
+function swapCharacters() {
+  const was = { who: player.who, x: player.x, y: player.y };
+  player.who = partner.who;
+  player.x = partner.x;
+  player.y = partner.y;
+  player.facing = Math.atan2(was.y - partner.y, was.x - partner.x);
+  player.walkTime = 0;
+  player.idleTime = 0;
+  player.cheer = 0;
+  player.wave = 0;
+  player.nearHim = true; // no hello wave straight after swapping
+  partner.who = was.who;
+  partner.x = was.x;
+  partner.y = was.y;
+  partner.room = room.id;
+  trail.length = 0;
 }
 
 function addHeart(x, y, big) {
@@ -1161,10 +1275,10 @@ function addHeart(x, y, big) {
 function giveKiss() {
   player.wave = 0;
   player.idleTime = 0;
-  player.facing = Math.atan2(HIM.y - player.y, HIM.x - player.x);
+  player.facing = Math.atan2(partner.y - player.y, partner.x - player.x);
   player.walkTime = 0;
   // A little heart pops up between them with every kiss
-  addHeart((player.x + HIM.x) / 2, Math.min(player.y, HIM.y) - 150, false);
+  addHeart((player.x + partner.x) / 2, Math.min(player.y, partner.y) - 150 * room.scale, false);
   kiss.progress = Math.min(1, kiss.progress + KISS_PER_PRESS);
   if (kiss.progress >= 1) {
     kiss.progress = 0;
@@ -1178,14 +1292,17 @@ function giveKiss() {
 
 function updateKiss(dt) {
   kiss.cooldown = Math.max(0, kiss.cooldown - dt);
-  kiss.celebrate = Math.max(0, kiss.celebrate - dt);
+  if (kiss.celebrate > 0) {
+    kiss.celebrate = Math.max(0, kiss.celebrate - dt);
+    if (kiss.celebrate === 0) swapCharacters();
+  }
   if (kiss.progress > 0) kiss.progress = Math.max(0, kiss.progress - KISS_DECAY * dt);
 
   // Release the celebration hearts over the first part of the jump
   if (kiss.burstLeft > 0) {
     const due = Math.ceil((kiss.celebrate - CELEBRATE_TIME * 0.35) / (CELEBRATE_TIME * 0.65) * 22);
     while (kiss.burstLeft > Math.max(0, due)) {
-      addHeart(HIM.x + (Math.random() - 0.5) * 50, HIM.y - 175 + Math.random() * 30, true);
+      addHeart(partner.x + (Math.random() - 0.5) * 50, partner.y - 175 * room.scale + Math.random() * 30, true);
       kiss.burstLeft -= 1;
     }
   }
@@ -1242,58 +1359,12 @@ function drawHearts() {
   }
 }
 
-function drawHimArm(layer, pivot, angle) {
-  ctx.save();
-  ctx.translate(pivot.x, pivot.y);
-  ctx.rotate(angle);
-  ctx.translate(-pivot.x, -pivot.y);
-  ctx.drawImage(himImg, layer * HIM.w, 0, HIM.w, HIM.h, 0, 0, HIM.w, HIM.h);
-  ctx.restore();
-}
-
-function drawHim() {
-  if (!spriteReady(himImg)) return;
-  let hop = 0;
-  let squash = 0;
-  let raise = 0;
-  let wave = 0;
-  if (kiss.celebrate > 0) {
-    const t = CELEBRATE_TIME - kiss.celebrate;
-    const hops = 4;
-    const f = ((t / CELEBRATE_TIME) * hops) % 1;
-    hop = 4 * f * (1 - f) * 20; // map px off the floor
-    squash = f < 0.12 ? 1 - f / 0.12 : 0; // landing squish
-    // Arms go up fast, wave while he bounces, and come down at the end
-    raise = Math.min(1, t / 0.15, kiss.celebrate / 0.25);
-    wave = Math.sin(t * 16) * 0.15;
-  }
-
-  ctx.save();
-  ctx.translate(HIM.x, HIM.y);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 24 - hop * 0.4, 6 - hop * 0.1, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.translate(0, -hop);
-  ctx.scale(HIM.scale * (1 + squash * 0.06), HIM.scale * (1 - squash * 0.08));
-  ctx.translate(-HIM.centerX, -HIM.h);
-  ctx.imageSmoothingQuality = 'high';
-
-  // Raised: arms swing up past the head (about 160 degrees), waving a little.
-  const up = 2.75 * raise;
-  drawHimArm(HIM_PARTS.armL, HIM.shoulderL, up + wave * raise);
-  drawHimArm(HIM_PARTS.armR, HIM.shoulderR, -up + wave * raise);
-  ctx.drawImage(himImg, HIM_PARTS.body * HIM.w, 0, HIM.w, HIM.h, 0, 0, HIM.w, HIM.h);
-  ctx.restore();
-}
-
-// Bar over his head while kissing; nothing at all during the cooldown.
+// Bar over their head while kissing; nothing at all during the cooldown.
 function drawKissHud() {
-  if (room.id !== 'apartment' || kiss.cooldown > 0 || player.seat) return;
-  if (!nearHim() && kiss.progress === 0) return;
-  const sx = toScreenX(HIM.x);
-  const sy = toScreenY(HIM.y - HIM.h * HIM.scale - 6);
+  if (partner.room !== room.id || kiss.cooldown > 0 || kiss.celebrate > 0 || player.seat) return;
+  if (!nearPartner() && kiss.progress === 0) return;
+  const sx = toScreenX(partner.x);
+  const sy = toScreenY(partner.y - poseHeight(partner.who, partnerPose()) - 6);
   const w = 96;
   const h = 12;
   const bx = sx - w / 2;
@@ -1319,7 +1390,7 @@ function drawKissHud() {
   // Heart badge on the left end of the bar
   drawHeart(bx - 2, by + h / 2, 2, 1);
 
-  if (kiss.progress === 0 && nearHim()) {
+  if (kiss.progress === 0 && nearPartner()) {
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
     pill(isTouch ? 'Tap KISS fast' : 'Mash E to give kisses', sx, by + h + 16, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
@@ -1331,7 +1402,7 @@ function drawActors() {
     { y: player.seat ? player.seat.y : player.y, draw: drawPlayer },
     { y: dog.hop ? Math.max(dog.hop.from.y, dog.hop.to.y) : dog.y, draw: drawDog },
   ];
-  if (room.id === 'apartment') actors.push({ y: HIM.y, draw: drawHim });
+  if (partner.room === room.id) actors.push({ y: partner.y, draw: drawPartner });
   actors.sort((a, b) => a.y - b.y);
   for (const a of actors) a.draw();
 }

@@ -25,7 +25,7 @@ A hosted copy runs inside the Claude app: https://claude.ai/artifact/3jkuJWVcY6z
 
 Walk up to the couch to sit and read (she faces the TV, so you see her from behind). Her dog tags along behind her and hops up to lie beside her whenever she sits down.
 
-He stands in the kitchen, between the island and the counters: walk up and mash E (or tap KISS) to fill the kiss bar. When it fills he jumps with his arms up and hearts float away, then there's a hidden 5 second cooldown before he'll take more.
+He stands in the kitchen, between the island and the counters: walk up and mash E (or tap KISS) to fill the kiss bar. When it fills he cheers and hops with his arms up while hearts float away, and then you swap: you play as him (`assets/him.png`, `assets/him-walk.png`) and she waits where you left her. Kiss her the same way to swap back. There's a hidden 5 second cooldown after each full bar. The dog follows whoever you're playing.
 
 Walk up to the door at the top of the apartment and press E (or tap ENTER) to go into the bedroom; you come in through its bottom door. Stand by that door and press E (or tap EXIT) to go back. Your dog comes with you.
 
