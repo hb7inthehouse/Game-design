@@ -578,9 +578,9 @@ const handImg = loadImage('assets/hand.png');
 const BOOK = {
   w: 1054, h: 679, // book.png
   pages: [[150, 482], [574, 905]], // text columns, book px
-  top: 64, lines: 16, lineGap: 31.5, lineH: 10,
-  cell: 12, // text is split into cells this wide; each turns yellow on its own
-  reachX: 22, reachY: 13, // how close the fingertip must pass
+  top: 70, lines: 11, lineGap: 46, lineH: 20,
+  cell: 14, // text is split into cells this wide; each turns yellow on its own
+  reachX: 26, reachY: 22, // how close the fingertip must pass
 };
 const BOOK_TURN = { w: 257, h: 216, base: { w: 236, h: 190 }, frames: [1, 2, 3, 4, 5], frameTime: 0.15 };
 const HAND = { w: 277, h: 452, tipX: 109, tipY: 6 };
@@ -608,14 +608,14 @@ function makePage() {
     for (let l = 0; l < BOOK.lines; l++) {
       const y = BOOK.top + l * BOOK.lineGap;
       // Indent the first line of a paragraph, end the last one short
-      let x = x0 + (l % 6 === 0 ? 28 : 0);
-      const end = l === BOOK.lines - 1 || l % 6 === 5 ? x0 + (x1 - x0) * (0.35 + Math.random() * 0.35) : x1;
+      let x = x0 + (l % 4 === 0 ? 30 : 0);
+      const end = l === BOOK.lines - 1 || l % 4 === 3 ? x0 + (x1 - x0) * (0.35 + Math.random() * 0.35) : x1;
       while (x < end - 12) {
-        const word = Math.min(end - x, 24 + Math.random() * 62);
+        const word = Math.min(end - x, 34 + Math.random() * 70);
         for (let cx = 0; cx < word - 2; cx += BOOK.cell) {
           cells.push({ x: x + cx, y, w: Math.min(BOOK.cell, word - cx), read: false });
         }
-        x += word + 11;
+        x += word + 14;
       }
     }
   });
