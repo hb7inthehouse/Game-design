@@ -528,7 +528,6 @@ const TV_SEQUENCES = {
   idle: [['idle', 0]],
 };
 const tv = { mode: 'idle', t: 0 };
-const TV_IDLE_FPS = 1.5; // waterfall frames per second
 const TV_PLAY_FPS = 3; // gameplay frames per second
 
 function tvShow(mode) {
@@ -551,7 +550,7 @@ function tvScreen() {
     }
     t -= len;
   }
-  if (step === 'idle') return TV_SCREENS.idle[Math.floor(tv.t * TV_IDLE_FPS) % 8];
+  if (step === 'idle') return -1; // off: the TV shows the map's own still picture
   if (step === 'play') {
     if (isGaming() && reading.sinceTurn > GLANCE_AFTER) return TV_SCREENS.pause;
     return TV_SCREENS.play[Math.floor(t * TV_PLAY_FPS) % TV_SCREENS.play.length];
@@ -562,6 +561,7 @@ function tvScreen() {
 function drawTv() {
   if (!spriteReady(tvImg)) return;
   const i = tvScreen();
+  if (i < 0) return;
   const sx = (i % TV_FRAME.perRow) * TV_FRAME.w;
   const sy = Math.floor(i / TV_FRAME.perRow) * TV_FRAME.h;
   // The TV is wider than the game's screens: fit the height, stretch a little,
@@ -875,7 +875,7 @@ const PARTNER_NODES = [
   { x: 600, y: 440 }, { x: 720, y: 300 }, { x: 1060, y: 300 }, { x: 1080, y: 470 },
   { x: 1080, y: 700 }, { x: 760, y: 700 }, { x: 700, y: 560 }, { x: 420, y: 560 },
 ];
-const PARTNER_GREET = 160; // map px: they stop and greet you inside this
+const PARTNER_GREET = 95; // map px: they stop and greet you inside this (about kissing distance)
 const PARTNER_STAY = [8, 16]; // seconds at a spot before moving on
 
 Object.assign(partner, {
