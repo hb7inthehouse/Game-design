@@ -305,11 +305,23 @@ for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
 
 // Tapping or clicking the room while seated also turns pages.
 canvas.addEventListener('pointerdown', (e) => {
-  if (player.seat) {
+  if (book.active) {
+    e.preventDefault();
+    bookPointerDown(e);
+  } else if (isGaming()) {
+    // Tapping the room while gaming presses the button too
     e.preventDefault();
     action();
   }
 });
+canvas.addEventListener('pointermove', (e) => {
+  if (book.active) bookPointerMove(e);
+});
+for (const ev of ['pointerup', 'pointercancel']) {
+  canvas.addEventListener(ev, () => {
+    book.dragging = false;
+  });
+}
 
 function heldDirs() {
   const dirs = new Set(touchDirs);
@@ -403,8 +415,9 @@ function updateFade(dt) {
 }
 
 function action() {
-  if (fade.door) return;
+  if (fade.door || book.active) return;
   if (player.seat) {
+    if (!isGaming()) return; // reading is the drag-to-read minigame
     if (reading.popTime > CHAPTER_POP_TIME - 0.5) return; // brief pause after a chapter
     reading.progress = Math.min(1, reading.progress + READ_PER_PRESS);
     reading.flipTime = 0.25;
@@ -447,6 +460,7 @@ function action() {
     player.walkTime = 0;
     reading.progress = 0;
     if (isGaming()) tvShow('boot');
+    else openBook();
   }
 }
 
@@ -477,7 +491,7 @@ function updateActionButton() {
   else if (nearBin()) label = 'TRASH';
   else if (nearestDoor()) label = nearestDoor().label;
   else if (nearestSeat()) label = 'SIT';
-  if (fade.door) label = '';
+  if (fade.door || book.active) label = '';
   if (actionBtn.textContent !== label) actionBtn.textContent = label;
   actionBtn.disabled = !label;
 }
@@ -551,6 +565,287 @@ function drawTv() {
   ctx.drawImage(tvImg, sx, sy, TV_FRAME.w, TV_FRAME.h, TV.x + (TV.w - w) / 2, TV.y, w, h);
 }
 
+// ---- Reading minigame ----------------------------------------------------------
+// Sitting down to read opens the book full screen. Drag the finger (touch,
+// mouse, or arrow keys) along the lines: text you pass over turns from black
+// to yellow. Turn every line yellow before time runs out and the page turns;
+// read 4 spreads to finish the chapter. Run out of time and the chapter is
+// lost. Either way the book closes and she stands up.
+
+const bookImg = loadImage('assets/book.png');
+const bookTurnImg = loadImage('assets/book-turn.png');
+const handImg = loadImage('assets/hand.png');
+const BOOK = {
+  w: 1054, h: 679, // book.png
+  pages: [[150, 482], [574, 905]], // text columns, book px
+  top: 64, lines: 16, lineGap: 31.5, lineH: 10,
+  cell: 12, // text is split into cells this wide; each turns yellow on its own
+  reachX: 22, reachY: 13, // how close the fingertip must pass
+};
+const BOOK_TURN = { w: 257, h: 216, base: { w: 236, h: 190 }, frames: [1, 2, 3, 4, 5], frameTime: 0.15 };
+const HAND = { w: 277, h: 452, tipX: 109, tipY: 6 };
+const PAGES_PER_CHAPTER = 4;
+const PAGE_TIME = 45; // seconds per spread
+const FINGER_SPEED = 520; // book px per second with the arrow keys
+const BOOK_RESULT_TIME = 1.8;
+
+const book = {
+  active: false,
+  page: 0, // 0..3
+  cells: [],
+  read: 0,
+  timeLeft: PAGE_TIME,
+  tip: { x: 150, y: 64 },
+  dragging: false,
+  turnT: -1, // >= 0 while the page-turn animation plays
+  result: null, // 'win' | 'fail' while the result message shows
+  resultT: 0,
+};
+
+function makePage() {
+  const cells = [];
+  BOOK.pages.forEach(([x0, x1], side) => {
+    for (let l = 0; l < BOOK.lines; l++) {
+      const y = BOOK.top + l * BOOK.lineGap;
+      // Indent the first line of a paragraph, end the last one short
+      let x = x0 + (l % 6 === 0 ? 28 : 0);
+      const end = l === BOOK.lines - 1 || l % 6 === 5 ? x0 + (x1 - x0) * (0.35 + Math.random() * 0.35) : x1;
+      while (x < end - 12) {
+        const word = Math.min(end - x, 24 + Math.random() * 62);
+        for (let cx = 0; cx < word - 2; cx += BOOK.cell) {
+          cells.push({ x: x + cx, y, w: Math.min(BOOK.cell, word - cx), read: false });
+        }
+        x += word + 11;
+      }
+    }
+  });
+  book.cells = cells;
+  book.read = 0;
+  book.timeLeft = PAGE_TIME;
+}
+
+function openBook() {
+  book.active = true;
+  book.page = 0;
+  book.turnT = -1;
+  book.result = null;
+  book.dragging = false;
+  book.tip = { x: BOOK.pages[0][0] - 10, y: BOOK.top + 4 };
+  makePage();
+}
+
+function closeBook() {
+  const won = book.result === 'win';
+  book.active = false;
+  book.dragging = false;
+  if (player.seat) standUp(0, 1);
+  if (won) {
+    reading.chapters += 1;
+    saveChapters(reading.chapters);
+    player.cheer = CHEER_TIME;
+    exciteDog();
+  }
+}
+
+// Mark everything the fingertip passed over on its way from a to b.
+function sweepFinger(a, b) {
+  const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 6));
+  for (let i = 0; i <= steps; i++) {
+    const px = a.x + ((b.x - a.x) * i) / steps;
+    const py = a.y + ((b.y - a.y) * i) / steps;
+    for (const c of book.cells) {
+      if (c.read) continue;
+      const dx = Math.max(0, Math.abs(px - (c.x + c.w / 2)) - c.w / 2) / BOOK.reachX;
+      const dy = (py - (c.y + BOOK.lineH / 2)) / BOOK.reachY;
+      if (dx * dx + dy * dy <= 1) {
+        c.read = true;
+        book.read += 1;
+      }
+    }
+  }
+}
+
+function moveFinger(to) {
+  const t = { x: Math.min(BOOK.w, Math.max(0, to.x)), y: Math.min(BOOK.h, Math.max(0, to.y)) };
+  if (book.turnT < 0 && !book.result) sweepFinger(book.tip, t);
+  book.tip = t;
+}
+
+function updateBook(dt) {
+  if (book.result) {
+    book.resultT -= dt;
+    if (book.resultT <= 0) closeBook();
+    return;
+  }
+  if (book.turnT >= 0) {
+    book.turnT += dt;
+    if (book.turnT >= BOOK_TURN.frames.length * BOOK_TURN.frameTime) {
+      book.turnT = -1;
+      book.page += 1;
+      makePage();
+      book.tip = { x: BOOK.pages[0][0] - 10, y: BOOK.top + 4 };
+    }
+    return;
+  }
+  // Arrow keys steer the finger too
+  const dirs = heldDirs();
+  const kx = (dirs.has('right') ? 1 : 0) - (dirs.has('left') ? 1 : 0);
+  const ky = (dirs.has('down') ? 1 : 0) - (dirs.has('up') ? 1 : 0);
+  if (kx || ky) {
+    const len = Math.hypot(kx, ky);
+    moveFinger({ x: book.tip.x + (kx / len) * FINGER_SPEED * dt, y: book.tip.y + (ky / len) * FINGER_SPEED * dt });
+  }
+  if (book.read >= book.cells.length) {
+    if (book.page + 1 >= PAGES_PER_CHAPTER) {
+      book.result = 'win';
+      book.resultT = BOOK_RESULT_TIME;
+    } else {
+      book.turnT = 0;
+    }
+    return;
+  }
+  book.timeLeft -= dt;
+  if (book.timeLeft <= 0) {
+    book.timeLeft = 0;
+    book.result = 'fail';
+    book.resultT = BOOK_RESULT_TIME;
+  }
+}
+
+// Where the book sits on screen (CSS px) and its scale.
+function bookLayout() {
+  const top = 72;
+  const availW = viewW * 0.94;
+  const availH = (viewH - top - 16) * 0.96;
+  const s = Math.min(availW / BOOK.w, availH / BOOK.h);
+  const w = BOOK.w * s;
+  const h = BOOK.h * s;
+  return { x: (viewW - w) / 2, y: top + (viewH - top - h) / 2, w, h, s };
+}
+
+function bookCloseButton() {
+  return { x: viewW - 46, y: 12, w: 34, h: 34 };
+}
+
+function screenToBook(sx, sy) {
+  const L = bookLayout();
+  return { x: (sx - L.x) / L.s, y: (sy - L.y) / L.s };
+}
+
+function bookPointerDown(e) {
+  const r = canvas.getBoundingClientRect();
+  const sx = e.clientX - r.left;
+  const sy = e.clientY - r.top;
+  const b = bookCloseButton();
+  if (sx >= b.x && sx <= b.x + b.w && sy >= b.y && sy <= b.y + b.h) {
+    book.result = 'closed';
+    closeBook();
+    return;
+  }
+  book.dragging = true;
+  canvas.setPointerCapture?.(e.pointerId);
+  // The fingertip jumps to where you touch, then follows the drag
+  book.tip = screenToBook(sx, sy);
+  moveFinger(book.tip);
+}
+
+function bookPointerMove(e) {
+  if (!book.dragging) return;
+  const r = canvas.getBoundingClientRect();
+  moveFinger(screenToBook(e.clientX - r.left, e.clientY - r.top));
+}
+
+function drawBookOverlay() {
+  if (!book.active) return;
+  const L = bookLayout();
+  ctx.fillStyle = 'rgba(16, 12, 9, 0.82)';
+  ctx.fillRect(0, 0, viewW, viewH);
+  ctx.imageSmoothingEnabled = false;
+
+  if (book.turnT >= 0 && spriteReady(bookTurnImg)) {
+    // Page turning: the small animation frames stretched over the book
+    const i = BOOK_TURN.frames[Math.min(BOOK_TURN.frames.length - 1, Math.floor(book.turnT / BOOK_TURN.frameTime))];
+    const kx = L.w / BOOK_TURN.base.w;
+    const ky = L.h / BOOK_TURN.base.h;
+    const dw = BOOK_TURN.w * kx;
+    const dh = BOOK_TURN.h * ky;
+    ctx.drawImage(bookTurnImg, i * BOOK_TURN.w, 0, BOOK_TURN.w, BOOK_TURN.h, L.x + (L.w - dw) / 2, L.y + L.h - dh, dw, dh);
+  } else {
+    if (spriteReady(bookImg)) ctx.drawImage(bookImg, L.x, L.y, L.w, L.h);
+    for (const c of book.cells) {
+      ctx.fillStyle = c.read ? '#f1c232' : '#1d1610';
+      ctx.fillRect(L.x + c.x * L.s, L.y + c.y * L.s, Math.max(1, (c.w - 1) * L.s), BOOK.lineH * L.s);
+    }
+  }
+  ctx.imageSmoothingEnabled = true;
+
+  // The hand, fingertip on the page
+  if (spriteReady(handImg) && book.turnT < 0) {
+    const hs = (L.w * 0.2) / HAND.w;
+    const tx = L.x + book.tip.x * L.s;
+    const ty = L.y + book.tip.y * L.s;
+    ctx.drawImage(handImg, tx - HAND.tipX * hs, ty - HAND.tipY * hs, HAND.w * hs, HAND.h * hs);
+  }
+
+  // Header: chapter and page, time left
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 15px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.fillStyle = '#f3e6d2';
+  const pct = book.cells.length ? Math.floor((book.read / book.cells.length) * 100) : 0;
+  ctx.fillText(`Chapter ${reading.chapters + 1} · Page ${book.page + 1} of ${PAGES_PER_CHAPTER} · ${pct}% read`, viewW / 2, 20);
+  const bw = Math.min(360, viewW - 130);
+  const bx = (viewW - bw) / 2;
+  const frac = book.timeLeft / PAGE_TIME;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.beginPath();
+  ctx.roundRect(bx, 36, bw, 10, 5);
+  ctx.fill();
+  ctx.fillStyle = frac > 0.3 ? '#f1c232' : '#e0563f';
+  ctx.beginPath();
+  ctx.roundRect(bx, 36, Math.max(10, bw * frac), 10, 5);
+  ctx.fill();
+  ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.fillStyle = '#f3e6d2';
+  ctx.fillText(`${Math.ceil(book.timeLeft)}s left`, viewW / 2, 56);
+
+  // Close button
+  const b = bookCloseButton();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.beginPath();
+  ctx.roundRect(b.x, b.y, b.w, b.h, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#f3e6d2';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(b.x + 11, b.y + 11);
+  ctx.lineTo(b.x + b.w - 11, b.y + b.h - 11);
+  ctx.moveTo(b.x + b.w - 11, b.y + 11);
+  ctx.lineTo(b.x + 11, b.y + b.h - 11);
+  ctx.stroke();
+
+  if (book.page === 0 && book.read === 0 && book.turnT < 0 && !book.result) {
+    ctx.font = '600 13px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    pill(isTouch ? 'Drag your finger along every line to read it' : 'Drag along every line to read it (or steer with the arrow keys)', viewW / 2, L.y + L.h + 4 > viewH - 14 ? viewH - 18 : L.y + L.h + 4, 'rgba(28, 25, 21, 0.9)', '#f3e6d2');
+  }
+
+  if (book.result === 'win' || book.result === 'fail') {
+    const t = 1 - book.resultT / BOOK_RESULT_TIME;
+    const pop = t < 0.15 ? 0.6 + (t / 0.15) * 0.55 : t < 0.25 ? 1.15 - ((t - 0.15) / 0.1) * 0.15 : 1;
+    ctx.save();
+    ctx.translate(viewW / 2, viewH / 2);
+    ctx.scale(pop, pop);
+    ctx.font = '800 30px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = 'rgba(20, 15, 10, 0.95)';
+    const text = book.result === 'win' ? 'Chapter Complete' : 'Out of time!';
+    ctx.strokeText(text, 0, 0);
+    ctx.fillStyle = book.result === 'win' ? '#f1c232' : '#ef7b62';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }
+}
+
 // ---- Dog walks ---------------------------------------------------------------
 // Every 30 seconds indoors the dog needs to go out, and you get 10 seconds to
 // reach the front door (bottom of the living room). Out in the yard he's on a
@@ -581,7 +876,7 @@ const walk = {
 
 function updateWalk(dt) {
   walk.failT = Math.max(0, walk.failT - dt);
-  if (room.id === 'yard' || fade.door) return;
+  if (room.id === 'yard' || fade.door || minigameActive()) return;
   if (walk.warning > 0) {
     walk.warning -= dt;
     if (walk.warning <= 0) {
@@ -593,6 +888,11 @@ function updateWalk(dt) {
   }
   walk.next -= dt;
   if (walk.next <= 0) walk.warning = WALK_WARNING;
+}
+
+// Reading, gaming or kissing: the dog waits until you're done.
+function minigameActive() {
+  return book.active || isGaming() || kiss.progress > 0 || kiss.celebrate > 0;
 }
 
 function startWalk() {
@@ -841,6 +1141,10 @@ function updatePlayer(dt) {
   if (near && !player.nearHim && kiss.cooldown <= 0) player.wave = WAVE_TIME;
   player.nearHim = near;
   updateActionButton();
+  if (book.active) {
+    updateBook(dt);
+    return;
+  }
 
   const dirs = heldDirs();
   let dx = 0;
@@ -1320,7 +1624,7 @@ function drawHud() {
   const sx = toScreenX(anchor.x);
   const sy = toScreenY(anchor.y - headTop);
 
-  if (player.seat) {
+  if (player.seat && isGaming()) {
     const w = 96;
     const h = 12;
     const bx = sx - w / 2;
@@ -1387,6 +1691,7 @@ function drawHud() {
     pill(isTouch ? `Tap ${nearPoop() ? 'PICK UP' : 'TRASH'} to ${what}` : `Press E to ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
   drawWalkBanner();
+  drawBookOverlay();
   if (fade.door) {
     const k = fade.t < FADE_TIME ? fade.t / FADE_TIME : 2 - fade.t / FADE_TIME;
     ctx.fillStyle = `rgba(12, 10, 8, ${Math.min(1, Math.max(0, k))})`;

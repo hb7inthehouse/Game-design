@@ -23,7 +23,7 @@ python3 -m http.server 8000
 
 A hosted copy runs inside the Claude app: https://claude.ai/artifact/3jkuJWVcY6zxmnhTQKpsD9
 
-Walk up to the couch to sit and read (she faces the TV, so you see her from behind). Her dog tags along behind her and hops up to lie beside her whenever she sits down.
+Walk up to the couch to sit and read (she faces the TV, so you see her from behind). Reading opens the book: drag the finger along every line to turn the text from black to yellow before the timer runs out, and the page turns. Read 4 pages to finish the chapter, then she stands up. The dog-walk alert waits while any minigame is going on. Her dog tags along behind her and hops up to lie beside her whenever she sits down.
 
 He stands in the kitchen, between the island and the counters: walk up and mash E (or tap KISS) to fill the kiss bar. When it fills he cheers and hops with his arms up while hearts float away, and then you swap: you play as him (`assets/him.png`, `assets/him-walk.png`) and she waits where you left her. Kiss her the same way to swap back. There's a hidden 5 second cooldown after each full bar. Playing as him, the living-room couch is for video games instead of reading: mash PLAY to clear levels while the TV (`assets/tv.jpg`) runs the game, showing Stage Clear on each full bar, a pause screen if you stop, and Game Over if you get up mid-level. The dog follows whoever you're playing.
 
