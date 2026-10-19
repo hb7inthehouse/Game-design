@@ -1293,6 +1293,15 @@ const HIM_FRAMES = {
   phone: { r: [1448, 0, 154, 363], ax: 69, ay: 363 },
   floorSit: { r: [1604, 0, 196, 263], ax: 97, ay: 263 },
   crouch: { r: [1802, 0, 165, 264], ax: 89, ay: 264 },
+  walk1: { r: [0, 368, 224, 349], ax: 111, ay: 349 },
+  walk2: { r: [226, 368, 206, 352], ax: 101, ay: 352 },
+  walk3: { r: [434, 368, 219, 352], ax: 109, ay: 352 },
+  walk4: { r: [655, 368, 214, 354], ax: 110, ay: 354 },
+  walk5: { r: [871, 368, 228, 356], ax: 109, ay: 356 },
+  walk6: { r: [1101, 368, 235, 354], ax: 116, ay: 354 },
+  walk7: { r: [1338, 368, 235, 356], ax: 119, ay: 356 },
+  walk8: { r: [1575, 368, 217, 356], ax: 109, ay: 356 },
+  walk9: { r: [1794, 368, 217, 356], ax: 111, ay: 356 },
 };
 
 function loadImage(src) {
@@ -1301,27 +1310,16 @@ function loadImage(src) {
   return img;
 }
 
-// Walking sideways is animated from each character's side-view pose split into
-// layers (assets/*-walk.png, each layer the size of the 'right' pose): upper
-// body, thigh, shin + shoe, darker copies of the leg for the far side, then the
-// near arm and a darker far arm. Legs swing from the hip and bend at the knee;
-// the body dips as the feet spread and rises as they pass, and the arms swing
-// against the legs.
-const SIDE_LAYERS = { upper: 0, thigh: 1, shin: 2, thighFar: 3, shinFar: 4, arm: 5, armFar: 6 };
+// Walking sideways plays each character's 9-frame walk cycle from their sprite
+// sheet, mirrored for walking left. Frames advance with distance walked so the
+// steps keep pace with the ground, and the body rises and falls a touch with
+// each step.
+const WALK_FRAMES = ['walk1', 'walk2', 'walk3', 'walk4', 'walk5', 'walk6', 'walk7', 'walk8', 'walk9'];
 const CHARS = {
   her: {
     name: 'her',
     img: loadImage('assets/her.png'),
     frames: HER_FRAMES,
-    walkImg: loadImage('assets/her-walk.png'),
-    side: {
-      w: 90, h: 342, ax: 54, ay: 342,
-      hip: { x: 53, y: 200 },
-      knee: { x: 51, y: 252 },
-      shoulder: { x: 46, y: 134 },
-      thigh: 52, // hip to knee, sprite px
-      shin: 90, // knee to sole
-    },
     idlePoses: ['happy', 'peace', 'armsCrossed', 'phone', 'idle'],
     backIdle: 'backpack', // idle pose while facing away
   },
@@ -1329,30 +1327,14 @@ const CHARS = {
     name: 'him',
     img: loadImage('assets/him.png'),
     frames: HIM_FRAMES,
-    walkImg: loadImage('assets/him-walk.png'),
-    side: {
-      w: 108, h: 365, ax: 52, ay: 365,
-      hip: { x: 52, y: 235 },
-      knee: { x: 50, y: 290 },
-      shoulder: { x: 52, y: 142 },
-      thigh: 55,
-      shin: 75,
-    },
     idlePoses: ['armsCrossed', 'phone', 'crouch', 'happy', 'idle'],
     backIdle: null,
   },
 };
 const GAIT = {
-  walkCycle: 150, // map px per full stride (two steps)
-  runCycle: 230,
-  swing: 0.42, // hip swing, radians each way
-  runSwing: 0.62,
-  knee: 0.85, // knee bend at mid-swing
-  runKnee: 1.25,
-  arm: 0.3, // arm swing, radians each way
-  runArm: 0.5,
-  lean: 0.035, // leans into the walk a little
-  runLean: 0.08,
+  walkCycle: 240, // map px per full walk cycle (~6 frames a second walking)
+  runCycle: 330, // ~8.5 frames a second running
+  bob: 2.5, // sprite px the body rises between steps
 };
 const LEG_LIFT = 14; // sprite px a foot rises when walking straight up or down
 
@@ -1397,7 +1379,13 @@ function playerPose() {
   const ch = CHARS[player.who];
   if (player.seat) return seatedPose(ch, player.seat);
   if (player.walkTime > 0) {
-    if (player.moveDx !== 0) return { name: 'right', mirror: player.moveDx < 0, side: true };
+    if (player.moveDx !== 0) {
+      const cycle = player.gait % 1;
+      const frame = WALK_FRAMES[Math.floor(cycle * WALK_FRAMES.length) % WALK_FRAMES.length];
+      // Up a little as the feet pass, down as they spread: twice per cycle
+      const bob = -Math.abs(Math.sin(cycle * Math.PI * 2)) * GAIT.bob;
+      return { name: frame, mirror: player.moveDx < 0, bob };
+    }
     return { name: player.moveDy < 0 ? 'back' : 'front', stepping: true };
   }
   if (player.cheer > 0) return { name: 'happy' };
@@ -1478,9 +1466,7 @@ function drawCharacter(ch, pose, x, y, actor, opts = {}) {
   ctx.scale((pose.mirror ? -0.5 : 0.5) * (1 + squash * 0.06), 0.5 * (1 - squash * 0.08));
   ctx.imageSmoothingQuality = 'high';
 
-  if (pose.side) {
-    drawSideWalk(ch, actor);
-  } else if (pose.stepping) {
+  if (pose.stepping) {
     // Walking straight toward or away from the viewer: step each leg in turn.
     const s = Math.sin(actor.gait * Math.PI * 2); // same rhythm as the side-on walk
     const liftL = Math.max(0, s) * LEG_LIFT;
@@ -1495,7 +1481,7 @@ function drawCharacter(ch, pose, x, y, actor, opts = {}) {
     const cut = f.hem - 18;
     blitPose(ch, f, 0, 0, w, cut, 0, f.ay - cut + (opts.nudge ?? 0));
   } else {
-    blitPose(ch, f, 0, 0, w, h, 0, opts.nudge ?? 0);
+    blitPose(ch, f, 0, 0, w, h, 0, (opts.nudge ?? 0) + (pose.bob ?? 0));
   }
   ctx.restore();
 }
@@ -1519,70 +1505,6 @@ function drawPartner() {
     squash = f < 0.12 ? 1 - f / 0.12 : 0; // landing squish
   }
   drawCharacter(CHARS[partner.who], partnerPose(), partner.x, partner.y, partner, { hop, squash });
-}
-
-function sideLayer(ch, layer) {
-  const s = ch.side;
-  ctx.drawImage(ch.walkImg, layer * s.w, 0, s.w, s.h, 0, 0, s.w, s.h);
-}
-
-function drawSideLeg(ch, thighLayer, shinLayer, hipAngle, kneeAngle) {
-  const { hip, knee } = ch.side;
-  ctx.save();
-  ctx.translate(hip.x, hip.y);
-  ctx.rotate(hipAngle);
-  ctx.translate(-hip.x, -hip.y);
-  sideLayer(ch, thighLayer);
-  ctx.translate(knee.x, knee.y);
-  ctx.rotate(kneeAngle);
-  ctx.translate(-knee.x, -knee.y);
-  sideLayer(ch, shinLayer);
-  ctx.restore();
-}
-
-function drawSideArm(ch, layer, angle) {
-  const { shoulder } = ch.side;
-  ctx.save();
-  ctx.translate(shoulder.x, shoulder.y);
-  ctx.rotate(angle);
-  ctx.translate(-shoulder.x, -shoulder.y);
-  sideLayer(ch, layer);
-  ctx.restore();
-}
-
-// One leg's hip and knee angles at this point in the stride. Positive angles
-// swing the foot backward; the knee bends most while the leg swings through.
-function legAngles(phase, run) {
-  const swing = run ? GAIT.runSwing : GAIT.swing;
-  const bend = run ? GAIT.runKnee : GAIT.knee;
-  const hip = -swing * Math.sin(phase);
-  const knee = bend * Math.pow(Math.max(0, Math.cos(phase)), 1.5) + 0.06;
-  return { hip, knee };
-}
-
-function drawSideWalk(ch, actor) {
-  if (!spriteReady(ch.walkImg)) return;
-  const S = ch.side;
-  const phase = actor.gait * Math.PI * 2;
-  const run = actor.running;
-  const near = legAngles(phase, run);
-  const far = legAngles(phase + Math.PI, run);
-  // Keep the lower foot on the floor: the more the legs spread, the lower the hips.
-  const footY = (a) => S.thigh * Math.cos(a.hip) + S.shin * Math.cos(a.hip + a.knee);
-  const drop = S.thigh + S.shin - Math.max(footY(near), footY(far));
-  ctx.translate(-S.ax, -S.ay + drop);
-  drawSideLeg(ch, SIDE_LAYERS.thighFar, SIDE_LAYERS.shinFar, far.hip, far.knee);
-  drawSideLeg(ch, SIDE_LAYERS.thigh, SIDE_LAYERS.shin, near.hip, near.knee);
-  ctx.save();
-  ctx.translate(S.hip.x, S.hip.y);
-  ctx.rotate(-(run ? GAIT.runLean : GAIT.lean) - Math.abs(Math.sin(phase)) * 0.015);
-  ctx.translate(-S.hip.x, -S.hip.y);
-  // Arms swing opposite their legs: the near arm goes back as the near leg steps forward.
-  const armSwing = (run ? GAIT.runArm : GAIT.arm) * Math.sin(phase);
-  drawSideArm(ch, SIDE_LAYERS.armFar, -armSwing);
-  sideLayer(ch, SIDE_LAYERS.upper);
-  drawSideArm(ch, SIDE_LAYERS.arm, armSwing);
-  ctx.restore();
 }
 
 // Height of a pose above its anchor, in map px (for the HUD).
