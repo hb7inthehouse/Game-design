@@ -177,7 +177,23 @@ function saveChapters(n) {
   }
 }
 
+function loadCount(key) {
+  try {
+    return Number(localStorage.getItem(key)) || 0;
+  } catch {
+    return 0;
+  }
+}
+function saveCount(key, n) {
+  try {
+    localStorage.setItem(key, String(n));
+  } catch {
+    // Storage blocked; the count just won't survive a reload.
+  }
+}
+
 const reading = {
+  levels: loadCount('levelsCleared'), // his video game levels
   progress: 0, // 0..1
   chapters: window.claude?.hot?.data?.chapters ?? loadChapters(),
   popTime: 0, // counts down while "Chapter Complete" shows
@@ -366,8 +382,14 @@ function action() {
     reading.flipTime = 0.25;
     reading.sinceTurn = 0;
     if (reading.progress >= 1) {
-      reading.chapters += 1;
-      saveChapters(reading.chapters);
+      if (isGaming()) {
+        reading.levels += 1;
+        saveCount('levelsCleared', reading.levels);
+        tvShow('victory');
+      } else {
+        reading.chapters += 1;
+        saveChapters(reading.chapters);
+      }
       reading.progress = 0;
       reading.popTime = CHAPTER_POP_TIME;
       exciteDog();
@@ -388,10 +410,21 @@ function action() {
     player.seat = seat;
     player.walkTime = 0;
     reading.progress = 0;
+    if (isGaming()) tvShow('boot');
   }
 }
 
+// He plays video games on the living-room TV instead of reading there.
+function gamesHere() {
+  return player.who === 'him' && room.id === 'apartment';
+}
+function isGaming() {
+  return !!player.seat && gamesHere();
+}
+
 function standUp(dx, dy) {
+  // Quitting mid-level is a game over; otherwise the TV goes back to idling.
+  if (isGaming()) tvShow(reading.progress > 0 && tvScreen() !== TV_SCREENS.victory ? 'gameover' : 'idle');
   const seat = player.seat;
   player.seat = null;
   player.x = seat.approach.x;
@@ -402,7 +435,7 @@ function standUp(dx, dy) {
 
 function updateActionButton() {
   let label = '';
-  if (player.seat) label = 'READ';
+  if (player.seat) label = isGaming() ? 'PLAY' : 'READ';
   else if (canKiss()) label = 'KISS';
   else if (nearestDoor()) label = nearestDoor().label;
   else if (nearestSeat()) label = 'SIT';
@@ -411,10 +444,78 @@ function updateActionButton() {
   actionBtn.disabled = !label;
 }
 
+// ---- TV --------------------------------------------------------------------
+// The living-room TV shows frames from a little platformer (assets/tv.jpg:
+// 160 x 96 screens, 8 per row). It idles on the waterfall; while he plays it
+// runs title, menu and level intro, then loops running, jumping and combat.
+// A cleared level shows Stage Clear, leaving mid-level shows Game Over, and
+// it pauses if he stops pressing buttons.
+
+const tvImg = loadImage('assets/tv.jpg');
+const TV = { x: 293, y: 137, w: 210, h: 71 }; // the screen on the map
+const TV_FRAME = { w: 160, h: 96, perRow: 8 };
+const TV_SCREENS = {
+  idle: [0, 1, 2, 3, 4, 5, 6, 7],
+  play: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
+  title: 32, menu: 33, pause: 34, transition: 35, gameover: 36, victory: 37,
+};
+// Timed sequences: [screen, seconds]; the last step holds.
+const TV_SEQUENCES = {
+  boot: [['title', 1.4], ['menu', 0.9], ['transition', 1.2], ['play', 0]],
+  victory: [['victory', 1.8], ['transition', 1.1], ['play', 0]],
+  gameover: [['gameover', 2.2], ['idle', 0]],
+  idle: [['idle', 0]],
+};
+const tv = { mode: 'idle', t: 0 };
+
+function tvShow(mode) {
+  tv.mode = mode;
+  tv.t = 0;
+}
+
+function updateTv(dt) {
+  tv.t += dt;
+}
+
+function tvScreen() {
+  const seq = TV_SEQUENCES[tv.mode];
+  let t = tv.t;
+  let step = seq[seq.length - 1][0];
+  for (const [name, len] of seq) {
+    if (len === 0 || t < len) {
+      step = name;
+      break;
+    }
+    t -= len;
+  }
+  if (step === 'idle') return TV_SCREENS.idle[Math.floor(tv.t * 4) % 8];
+  if (step === 'play') {
+    if (isGaming() && reading.sinceTurn > GLANCE_AFTER) return TV_SCREENS.pause;
+    return TV_SCREENS.play[Math.floor(t * 8) % TV_SCREENS.play.length];
+  }
+  return TV_SCREENS[step];
+}
+
+function drawTv() {
+  if (!spriteReady(tvImg)) return;
+  const i = tvScreen();
+  const sx = (i % TV_FRAME.perRow) * TV_FRAME.w;
+  const sy = Math.floor(i / TV_FRAME.perRow) * TV_FRAME.h;
+  // The TV is wider than the game's screens: fit the height, stretch a little,
+  // and leave the sides dark.
+  const h = TV.h;
+  const w = Math.min(TV.w, h * (TV_FRAME.w / TV_FRAME.h) * 1.25);
+  ctx.fillStyle = '#05070a';
+  ctx.fillRect(TV.x, TV.y, TV.w, TV.h);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(tvImg, sx, sy, TV_FRAME.w, TV_FRAME.h, TV.x + (TV.w - w) / 2, TV.y, w, h);
+}
+
 // ---- Update --------------------------------------------------------------
 
 function update(dt) {
   updateFade(dt);
+  updateTv(dt);
   updateCamera(dt);
   if (fade.door) {
     player.walkTime = 0; // hold still while the screen fades
@@ -504,6 +605,11 @@ function updateCamera(dt) {
   const target = player.seat ?? player;
   let tx = target.x;
   let ty = target.y - 70 * room.scale;
+  if (isGaming()) {
+    // Look up toward the TV so you can watch the game
+    tx = (target.x + TV.x + TV.w / 2) / 2;
+    ty = (target.y - 90 + TV.y + TV.h / 2) / 2;
+  }
   const halfW = viewW / scale / 2;
   const halfH = viewH / scale / 2;
   tx = room.w <= halfW * 2 ? room.w / 2 : Math.min(Math.max(tx, halfW), room.w - halfW);
@@ -918,7 +1024,9 @@ function drawHud() {
     const by = sy - 22;
     // Chapter label
     ctx.font = '600 11px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
-    pill(`Chapter ${reading.chapters + 1}`, sx, by - 12, 'rgba(28, 25, 21, 0.75)', '#efe6d8');
+    const gaming = isGaming();
+    const label = gaming ? `Level ${reading.levels + 1}` : `Chapter ${reading.chapters + 1}`;
+    pill(label, sx, by - 12, 'rgba(28, 25, 21, 0.75)', '#efe6d8');
     // Bar
     ctx.fillStyle = 'rgba(28, 25, 21, 0.8)';
     ctx.beginPath();
@@ -930,8 +1038,8 @@ function drawHud() {
     ctx.fill();
     if (reading.progress > 0) {
       const g = ctx.createLinearGradient(bx, 0, bx + w, 0);
-      g.addColorStop(0, '#e6a75c');
-      g.addColorStop(1, '#f4d27a');
+      g.addColorStop(0, gaming ? '#4fb06a' : '#e6a75c');
+      g.addColorStop(1, gaming ? '#a6e36b' : '#f4d27a');
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.roundRect(bx, by, Math.max(h, w * reading.progress), h, 6);
@@ -949,13 +1057,14 @@ function drawHud() {
       ctx.font = '800 18px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
       ctx.lineWidth = 5;
       ctx.strokeStyle = 'rgba(28, 25, 21, 0.9)';
-      ctx.strokeText('Chapter Complete', 0, 0);
-      ctx.fillStyle = '#f4d27a';
-      ctx.fillText('Chapter Complete', 0, 0);
+      const done = gaming ? 'Level Complete' : 'Chapter Complete';
+      ctx.strokeText(done, 0, 0);
+      ctx.fillStyle = gaming ? '#a6e36b' : '#f4d27a';
+      ctx.fillText(done, 0, 0);
       ctx.restore();
     } else if (reading.progress === 0) {
       ctx.font = '500 11px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
-      const hint = isTouch ? 'Tap READ fast · arrows to get up' : 'Mash E or Space · arrows to get up';
+      const hint = isTouch ? `Tap ${gaming ? 'PLAY' : 'READ'} fast · arrows to get up` : 'Mash E or Space · arrows to get up';
       pill(hint, sx, by + h + 16, 'rgba(28, 25, 21, 0.75)', '#efe6d8');
     }
   } else if (nearestDoor() && !fade.door) {
@@ -965,7 +1074,8 @@ function drawHud() {
     pill(text, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   } else if (nearestSeat()) {
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
-    pill(isTouch ? 'Tap SIT to read' : 'Press E to sit and read', sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
+    const what = gamesHere() ? 'play video games' : 'read';
+    pill(isTouch ? `Tap SIT to ${what}` : `Press E to sit and ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
   drawKissHud();
   if (fade.door) {
@@ -1417,6 +1527,7 @@ function render() {
   if (room.img.complete && room.img.naturalWidth) {
     ctx.drawImage(room.img, 0, 0, room.w, room.h);
   }
+  if (room.id === 'apartment') drawTv();
   drawActors();
   drawHearts();
   if (showHitboxes) drawHitboxes();
