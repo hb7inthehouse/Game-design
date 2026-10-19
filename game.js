@@ -305,7 +305,10 @@ for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
 
 // Tapping or clicking the room while seated also turns pages.
 canvas.addEventListener('pointerdown', (e) => {
-  if (book.active) {
+  if (dialogue.active) {
+    e.preventDefault();
+    advanceDialogue();
+  } else if (book.active) {
     e.preventDefault();
     bookPointerDown(e);
   } else if (isGaming()) {
@@ -339,12 +342,12 @@ function circleHitsRect(cx, cy, r, rect) {
   return dx * dx + dy * dy < r * r;
 }
 
-function isFree(x, y) {
+function isFree(x, y, ignorePartner = false) {
   const r = PLAYER_RADIUS * room.scale;
   // Edges of her footprint all have to be on the floor
   const onFloor = (px, py) => room.floor.some((a) => px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h);
   if (![[x, y], [x - r, y], [x + r, y], [x, y - r], [x, y + r]].every(([px, py]) => onFloor(px, py))) return false;
-  if (partner.room === room.id && circleHitsRect(x, y, r, partnerBox())) return false;
+  if (!ignorePartner && partner.room === room.id && circleHitsRect(x, y, r, partnerBox())) return false;
   if (room.id === 'yard' && walk.phase !== 'clean' && x - r < 110) return false;
   return !room.obstacles.some((o) => circleHitsRect(x, y, r, o));
 }
@@ -355,6 +358,7 @@ function nearestSeat() {
   let best = null;
   let bestDist = SIT_RANGE;
   for (const seat of room.seats) {
+    if (partner.seat === seat && partner.room === room.id) continue;
     const d = Math.hypot(player.x - seat.approach.x, player.y - seat.approach.y);
     if (d < bestDist) {
       best = seat;
@@ -415,6 +419,10 @@ function updateFade(dt) {
 }
 
 function action() {
+  if (dialogue.active) {
+    advanceDialogue();
+    return;
+  }
   if (fade.door || book.active) return;
   if (player.seat) {
     if (!isGaming()) return; // reading is the drag-to-read minigame
@@ -492,6 +500,7 @@ function updateActionButton() {
   else if (nearestDoor()) label = nearestDoor().label;
   else if (nearestSeat()) label = 'SIT';
   if (fade.door || book.active) label = '';
+  if (dialogue.active) label = 'NEXT';
   if (actionBtn.textContent !== label) actionBtn.textContent = label;
   actionBtn.disabled = !label;
 }
@@ -846,6 +855,340 @@ function drawBookOverlay() {
   }
 }
 
+// ---- Partner life ------------------------------------------------------------
+// Whoever you're not playing gets on with their day in the apartment: they
+// walk between favourite spots (the couch, the kitchen, the TV, the window),
+// sit on the couch for a while, and strike idle poses. Walk up to them and
+// they stop, turn to you and wave.
+
+const PARTNER_SPOTS = [
+  { name: 'couch', seat: 1 },
+  { name: 'couch', seat: 2 },
+  { name: 'kitchen', x: 1132, y: 478, facing: Math.PI },
+  { name: 'tv', x: 400, y: 330, facing: -Math.PI / 2 },
+  { name: 'window', x: 330, y: 300, facing: Math.PI },
+  { name: 'shelf', x: 640, y: 300, facing: -Math.PI / 2 },
+  { name: 'island', x: 700, y: 560, facing: 0 },
+];
+// Points the partner can route through to get around the island and couch.
+const PARTNER_NODES = [
+  { x: 600, y: 440 }, { x: 720, y: 300 }, { x: 1060, y: 300 }, { x: 1080, y: 470 },
+  { x: 1080, y: 700 }, { x: 760, y: 700 }, { x: 700, y: 560 }, { x: 420, y: 560 },
+];
+const PARTNER_GREET = 160; // map px: they stop and greet you inside this
+const PARTNER_STAY = [8, 16]; // seconds at a spot before moving on
+
+Object.assign(partner, {
+  facing: Math.PI,
+  walkTime: 0,
+  moveDx: 0,
+  moveDy: 0,
+  idleTime: 0,
+  wave: 0,
+  greeted: false,
+  path: [],
+  seat: null,
+  spot: PARTNER_SPOTS[2],
+  stay: 6,
+});
+
+function partnerFree(x, y) {
+  return isFree(x, y, true);
+}
+
+function lineClear(a, b) {
+  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 12));
+  for (let i = 0; i <= n; i++) {
+    if (!partnerFree(a.x + ((b.x - a.x) * i) / n, a.y + ((b.y - a.y) * i) / n)) return false;
+  }
+  return true;
+}
+
+// Shortest route from `from` to `to` through the waypoints.
+function findRoute(from, to) {
+  if (lineClear(from, to)) return [to];
+  const nodes = [from, ...PARTNER_NODES, to];
+  const dist = nodes.map(() => Infinity);
+  const prev = nodes.map(() => -1);
+  const done = nodes.map(() => false);
+  dist[0] = 0;
+  for (;;) {
+    let u = -1;
+    for (let i = 0; i < nodes.length; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
+    if (u < 0 || u === nodes.length - 1) break;
+    done[u] = true;
+    for (let v = 0; v < nodes.length; v++) {
+      if (done[v] || v === u) continue;
+      const d = Math.hypot(nodes[u].x - nodes[v].x, nodes[u].y - nodes[v].y);
+      if (dist[u] + d < dist[v] && lineClear(nodes[u], nodes[v])) {
+        dist[v] = dist[u] + d;
+        prev[v] = u;
+      }
+    }
+  }
+  if (dist[nodes.length - 1] === Infinity) return null;
+  const route = [];
+  for (let i = nodes.length - 1; i > 0; i = prev[i]) route.unshift(nodes[i]);
+  return route;
+}
+
+function spotTarget(spot) {
+  if (spot.seat !== undefined) return ROOMS.apartment.seats[spot.seat].approach;
+  return spot;
+}
+
+function partnerStandUp() {
+  if (!partner.seat) return;
+  partner.x = partner.seat.approach.x;
+  partner.y = partner.seat.approach.y;
+  partner.seat = null;
+}
+
+function choosePartnerSpot() {
+  const options = PARTNER_SPOTS.filter((s) => s !== partner.spot && !(s.seat !== undefined && player.seat === ROOMS.apartment.seats[s.seat]));
+  const spot = options[Math.floor(Math.random() * options.length)];
+  partnerStandUp();
+  const route = findRoute({ x: partner.x, y: partner.y }, spotTarget(spot));
+  if (!route) {
+    partner.stay = 3;
+    return;
+  }
+  partner.spot = spot;
+  partner.path = route;
+}
+
+function updatePartner(dt) {
+  partner.wave = Math.max(0, partner.wave - dt);
+  if (partner.room !== room.id || room.id !== 'apartment') return;
+  const near = Math.hypot(player.x - partner.x, player.y - partner.y) < PARTNER_GREET * room.scale && !player.seat;
+  // Busy with you: kissing, celebrating or talking
+  if (kiss.progress > 0 || kiss.celebrate > 0 || dialogue.active) {
+    partner.walkTime = 0;
+    return;
+  }
+  if (near) {
+    if (!partner.greeted) {
+      partner.greeted = true;
+      partnerStandUp();
+      partner.wave = WAVE_TIME;
+    }
+    partner.walkTime = 0;
+    partner.idleTime = 0;
+    partner.facing = Math.atan2(player.y - partner.y, player.x - partner.x);
+    return;
+  }
+  partner.greeted = false;
+
+  if (partner.path.length) {
+    const t = partner.path[0];
+    const dx = t.x - partner.x;
+    const dy = t.y - partner.y;
+    const d = Math.hypot(dx, dy);
+    const step = WALK_SPEED * 0.8 * room.scale * dt;
+    if (d <= step) {
+      partner.x = t.x;
+      partner.y = t.y;
+      partner.path.shift();
+      if (!partner.path.length) {
+        partner.walkTime = 0;
+        partner.idleTime = 0;
+        partner.stay = PARTNER_STAY[0] + Math.random() * (PARTNER_STAY[1] - PARTNER_STAY[0]);
+        const spot = partner.spot;
+        if (spot.seat !== undefined) {
+          const seat = ROOMS.apartment.seats[spot.seat];
+          if (player.seat !== seat) {
+            partner.seat = seat;
+            partner.x = seat.x;
+            partner.y = seat.y;
+          }
+        } else {
+          partner.facing = spot.facing;
+        }
+      }
+      return;
+    }
+    partner.x += (dx / d) * step;
+    partner.y += (dy / d) * step;
+    partner.walkTime += dt;
+    partner.gait += step / room.scale / GAIT.walkCycle;
+    partner.facing = Math.atan2(dy, dx);
+    // Walk sideways when mostly sideways, otherwise step toward or away
+    partner.moveDx = Math.abs(dx) > Math.abs(dy) * 0.6 ? Math.sign(dx) : 0;
+    partner.moveDy = Math.sign(dy);
+    return;
+  }
+  partner.walkTime = 0;
+  partner.idleTime += dt;
+  partner.stay -= dt;
+  if (partner.stay <= 0) choosePartnerSpot();
+}
+
+// Partner on the couch: just sitting, no book.
+function partnerSeatedPose(ch, seat) {
+  if (ch.name === 'him') {
+    if (seat.view === 'back') return { name: 'back', waistUp: true };
+    return { name: 'floorSit' };
+  }
+  if (seat.view === 'back') return { name: 'couchBack' };
+  if (seat.view === 'front') return { name: 'couchFront' };
+  return { name: 'couchRight', mirror: seat.view === 'left' };
+}
+
+// ---- Dialogue -----------------------------------------------------------------
+// Classic RPG text box: the speaker's portrait on the left, their name, and the
+// line typing out across a big box at the bottom of the screen. Tap or press E
+// to finish the line or move on. Plays after a full kiss bar.
+
+const NAMES = { her: 'Her', him: 'Him' }; // put their real names here
+const PORTRAITS = {
+  her: { r: [8, 0, 102, 102] }, // head crops from each 'front' pose
+  him: { r: [12, 0, 117, 117] },
+};
+const TYPE_SPEED = 38; // characters per second
+// `a` is whoever gave the kisses, `b` whoever got them.
+const KISS_TALKS = [
+  [['b', 'What was that for?'], ['a', 'Do I need a reason?'], ['b', "No. But now it's my turn."]],
+  [['b', 'Okay, okay, I surrender!'], ['a', 'Good. I win.'], ['b', 'Rematch. Right now.']],
+  [['b', "You're in a really good mood today."], ['a', "I'm always in a good mood when I'm with you."], ['b', 'Smooth. Come here, you.']],
+  [['b', 'The dog is staring at us, you know.'], ['a', "Let him stare. He's jealous."], ['b', 'Fair. Okay, my turn to steal some kisses.']],
+  [['b', "I'm keeping count. That's at least a dozen."], ['a', 'Then I owe you another dozen.'], ['b', "I'll hold you to that."]],
+];
+const dialogue = { active: false, lines: [], i: 0, shown: 0, onDone: null, talk: 0 };
+
+function startKissTalk(kisser, kissed, onDone) {
+  const talk = KISS_TALKS[dialogue.talk % KISS_TALKS.length];
+  dialogue.talk += 1;
+  dialogue.lines = talk.map(([who, text]) => ({ who: who === 'a' ? kisser : kissed, text }));
+  dialogue.i = 0;
+  dialogue.shown = 0;
+  dialogue.onDone = onDone;
+  dialogue.active = true;
+  dialogue.blink = 0;
+}
+
+function advanceDialogue() {
+  const line = dialogue.lines[dialogue.i];
+  if (dialogue.shown < line.text.length) {
+    dialogue.shown = line.text.length; // finish typing first
+    return;
+  }
+  dialogue.i += 1;
+  dialogue.shown = 0;
+  if (dialogue.i >= dialogue.lines.length) {
+    dialogue.active = false;
+    dialogue.onDone?.();
+  }
+}
+
+function updateDialogue(dt) {
+  dialogue.blink += dt;
+  const line = dialogue.lines[dialogue.i];
+  if (line) dialogue.shown = Math.min(line.text.length, dialogue.shown + TYPE_SPEED * dt);
+}
+
+function wrapText(text, maxW) {
+  const words = text.split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && cur) {
+      lines.push(cur);
+      cur = w;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+function drawDialogue() {
+  if (!dialogue.active) return;
+  const line = dialogue.lines[dialogue.i];
+  if (!line) return;
+  const ch = CHARS[line.who];
+  const pad = 12;
+  const boxW = Math.min(viewW - 24, 720);
+  const boxH = viewW < 500 ? 118 : 132;
+  const bx = (viewW - boxW) / 2;
+  const by = viewH - boxH - 14;
+  const portrait = boxH - pad * 2;
+
+  // Box: dark panel with a double border, the classic look
+  ctx.fillStyle = 'rgba(18, 14, 24, 0.94)';
+  ctx.beginPath();
+  ctx.roundRect(bx, by, boxW, boxH, 10);
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#efe6d8';
+  ctx.stroke();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(239, 230, 216, 0.35)';
+  ctx.beginPath();
+  ctx.roundRect(bx + 5, by + 5, boxW - 10, boxH - 10, 7);
+  ctx.stroke();
+
+  // Portrait in its own frame
+  const px = bx + pad;
+  const py = by + pad;
+  ctx.fillStyle = line.who === 'her' ? '#4a2f3a' : '#2f2a4a';
+  ctx.beginPath();
+  ctx.roundRect(px, py, portrait, portrait, 6);
+  ctx.fill();
+  ctx.strokeStyle = '#efe6d8';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  if (spriteReady(ch.img)) {
+    const f = ch.frames.front;
+    const [cx, cy, cw, chh] = PORTRAITS[line.who].r;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(px + 2, py + 2, portrait - 4, portrait - 4, 5);
+    ctx.clip();
+    ctx.imageSmoothingEnabled = false;
+    // Gentle bob while they talk
+    const talking = dialogue.shown < line.text.length;
+    const bob = talking ? Math.round(Math.sin(dialogue.blink * 14)) : 0;
+    ctx.drawImage(ch.img, f.r[0] + cx, f.r[1] + cy, cw, chh, px + 4, py + 6 + bob, portrait - 8, portrait - 8);
+    ctx.imageSmoothingEnabled = true;
+    ctx.restore();
+  }
+
+  // Name and text
+  const tx = px + portrait + 14;
+  const tw = bx + boxW - tx - pad;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.font = '800 15px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.fillStyle = line.who === 'her' ? '#ff9fc0' : '#b9a6ff';
+  ctx.fillText(NAMES[line.who], tx, py + 2);
+  ctx.font = viewW < 500 ? '600 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif' : '600 17px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.fillStyle = '#f6efe4';
+  const lh = viewW < 500 ? 19 : 23;
+  const lines = wrapText(line.text, tw);
+  let left = Math.floor(dialogue.shown);
+  lines.forEach((l, k) => {
+    const part = l.slice(0, Math.max(0, left));
+    left -= l.length + 1;
+    ctx.fillText(part, tx, py + 26 + k * lh);
+  });
+  // Blinking "next" arrow once the line is out
+  if (dialogue.shown >= line.text.length && Math.floor(dialogue.blink * 2.5) % 2 === 0) {
+    const ax = bx + boxW - 24;
+    const ay = by + boxH - 22;
+    ctx.fillStyle = '#efe6d8';
+    ctx.beginPath();
+    ctx.moveTo(ax - 7, ay);
+    ctx.lineTo(ax + 7, ay);
+    ctx.lineTo(ax, ay + 8);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+}
+
 // ---- Dog walks ---------------------------------------------------------------
 // Every 30 seconds indoors the dog needs to go out, and you get 10 seconds to
 // reach the front door (bottom of the living room). Out in the yard he's on a
@@ -892,7 +1235,7 @@ function updateWalk(dt) {
 
 // Reading, gaming or kissing: the dog waits until you're done.
 function minigameActive() {
-  return book.active || isGaming() || kiss.progress > 0 || kiss.celebrate > 0;
+  return book.active || isGaming() || kiss.progress > 0 || kiss.celebrate > 0 || dialogue.active;
 }
 
 function startWalk() {
@@ -1124,7 +1467,16 @@ function update(dt) {
     updateActionButton();
     return;
   }
+  if (dialogue.active) {
+    player.walkTime = 0;
+    updateDialogue(dt);
+    updateActionButton();
+    updateDog(dt);
+    updateKiss(dt); // hearts keep floating away
+    return;
+  }
   updatePlayer(dt);
+  updatePartner(dt);
   updateDog(dt);
   updateKiss(dt);
   updateYard(dt);
@@ -1378,40 +1730,45 @@ function facingAway(facing) {
 function playerPose() {
   const ch = CHARS[player.who];
   if (player.seat) return seatedPose(ch, player.seat);
-  if (player.walkTime > 0) {
-    if (player.moveDx !== 0) {
-      const cycle = player.gait % 1;
+  return actorPose(ch, player, partner);
+}
+
+// Walking, waving, cheering or idling: shared by you and your partner.
+function actorPose(ch, actor, other) {
+  if (actor.walkTime > 0) {
+    if (actor.moveDx !== 0) {
+      const cycle = actor.gait % 1;
       const frame = WALK_FRAMES[Math.floor(cycle * WALK_FRAMES.length) % WALK_FRAMES.length];
       // Up a little as the feet pass, down as they spread: twice per cycle
       const bob = -Math.abs(Math.sin(cycle * Math.PI * 2)) * GAIT.bob;
-      return { name: frame, mirror: player.moveDx < 0, bob };
+      return { name: frame, mirror: actor.moveDx < 0, bob };
     }
-    return { name: player.moveDy < 0 ? 'back' : 'front', stepping: true };
+    return { name: actor.moveDy < 0 ? 'back' : 'front', stepping: true };
   }
-  if (player.cheer > 0) return { name: 'happy' };
-  if (player.wave > 0) return { name: 'wave', mirror: partner.x < player.x };
-  const t = player.idleTime;
+  if (actor.cheer > 0) return { name: 'happy' };
+  if (actor.wave > 0) return { name: 'wave', mirror: other.x < actor.x };
+  const t = actor.idleTime;
   if (t > FLOOR_SIT_AFTER) return { name: 'floorSit' };
   if (t > IDLE_POSE_AFTER) {
     const cycle = Math.floor((t - IDLE_POSE_AFTER) / IDLE_POSE_EVERY);
     const inPose = (t - IDLE_POSE_AFTER) % IDLE_POSE_EVERY < IDLE_POSE_HOLD;
     if (inPose) {
       // Facing away, she alternates between showing her backpack and turning around
-      if (facingAway(player.facing) && ch.backIdle && cycle % 2 === 0) return { name: ch.backIdle };
+      if (facingAway(actor.facing) && ch.backIdle && cycle % 2 === 0) return { name: ch.backIdle };
       return { name: ch.idlePoses[(cycle * 3 + 1) % ch.idlePoses.length] };
     }
   }
-  return standingPose(player.facing);
+  return standingPose(actor.facing);
 }
 
 // The character you're not playing: cheers when the kiss bar fills, otherwise
 // turns to watch you when you're nearby.
 function partnerPose() {
+  const ch = CHARS[partner.who];
   if (kiss.celebrate > 0) return { name: 'happy' };
-  if (partner.room === room.id && Math.hypot(player.x - partner.x, player.y - partner.y) < 260 * room.scale) {
-    return standingPose(Math.atan2(player.y - partner.y, player.x - partner.x));
-  }
-  return { name: 'front' };
+  if (partner.seat) return partnerSeatedPose(ch, partner.seat);
+  if (dialogue.active || kiss.progress > 0) return standingPose(Math.atan2(player.y - partner.y, player.x - partner.x));
+  return actorPose(ch, partner, player);
 }
 
 // On a seat she faces the way the seat faces, glances at the dog when she
@@ -1504,7 +1861,7 @@ function drawPartner() {
     hop = 4 * f * (1 - f) * 20;
     squash = f < 0.12 ? 1 - f / 0.12 : 0; // landing squish
   }
-  drawCharacter(CHARS[partner.who], partnerPose(), partner.x, partner.y, partner, { hop, squash });
+  drawCharacter(CHARS[partner.who], partnerPose(), partner.x, partner.y, partner, { hop, squash, seated: !!partner.seat });
 }
 
 // Height of a pose above its anchor, in map px (for the HUD).
@@ -1614,6 +1971,7 @@ function drawHud() {
   }
   drawWalkBanner();
   drawBookOverlay();
+  drawDialogue();
   if (fade.door) {
     const k = fade.t < FADE_TIME ? fade.t / FADE_TIME : 2 - fade.t / FADE_TIME;
     ctx.fillStyle = `rgba(12, 10, 8, ${Math.min(1, Math.max(0, k))})`;
@@ -1893,6 +2251,7 @@ function canKiss() {
 
 // Take control of the partner; you stay behind in their place.
 function swapCharacters() {
+  partnerStandUp();
   const was = { who: player.who, x: player.x, y: player.y };
   player.who = partner.who;
   player.x = partner.x;
@@ -1907,6 +2266,13 @@ function swapCharacters() {
   partner.x = was.x;
   partner.y = was.y;
   partner.room = room.id;
+  partner.facing = Math.atan2(player.y - was.y, player.x - was.x);
+  partner.path = [];
+  partner.spot = null;
+  partner.stay = 6;
+  partner.greeted = true; // already together: no hello wave
+  partner.walkTime = 0;
+  partner.idleTime = 0;
   trail.length = 0;
 }
 
@@ -1945,7 +2311,8 @@ function updateKiss(dt) {
   kiss.cooldown = Math.max(0, kiss.cooldown - dt);
   if (kiss.celebrate > 0) {
     kiss.celebrate = Math.max(0, kiss.celebrate - dt);
-    if (kiss.celebrate === 0) swapCharacters();
+    // Have a little chat, then swap who you're playing
+    if (kiss.celebrate === 0) startKissTalk(player.who, partner.who, swapCharacters);
   }
   if (kiss.progress > 0) kiss.progress = Math.max(0, kiss.progress - KISS_DECAY * dt);
 
@@ -2012,7 +2379,7 @@ function drawHearts() {
 
 // Bar over their head while kissing; nothing at all during the cooldown.
 function drawKissHud() {
-  if (partner.room !== room.id || kiss.cooldown > 0 || kiss.celebrate > 0 || player.seat) return;
+  if (partner.room !== room.id || kiss.cooldown > 0 || kiss.celebrate > 0 || player.seat || dialogue.active) return;
   if (!nearPartner() && kiss.progress === 0) return;
   const sx = toScreenX(partner.x);
   const sy = toScreenY(partner.y - poseHeight(partner.who, partnerPose()) - 6);
