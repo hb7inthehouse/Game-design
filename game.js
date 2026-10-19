@@ -60,6 +60,13 @@ const ROOMS = {
         x: 772, y: 262, range: 80,
         spawn: { x: 772, y: 272, facing: Math.PI / 2 },
       },
+      {
+        // The front door: only opens when the dog needs to go out
+        to: 'yard', label: 'WALK', prompt: 'take the dog out',
+        x: 752, y: 775, range: 85,
+        spawn: { x: 752, y: 765, facing: -Math.PI / 2 },
+        when: () => walk.warning > 0,
+      },
     ],
   },
   bedroom: {
@@ -97,6 +104,23 @@ const ROOMS = {
         to: 'apartment', label: 'EXIT', prompt: 'go back out',
         x: 800, y: 985, range: 110,
         spawn: { x: 800, y: 965, facing: -Math.PI / 2 },
+      },
+    ],
+  },
+  yard: {
+    id: 'yard',
+    src: 'assets/yard.jpg',
+    w: 1536,
+    h: 1024,
+    scale: 1.1,
+    floor: [{ name: 'grass', x: 20, y: 40, w: 1262, h: 965 }],
+    obstacles: [{ name: 'bin', x: 1200, y: 300, w: 78, h: 76 }],
+    seats: [],
+    doors: [
+      {
+        // No button: walking off the left edge after cleaning up takes you in
+        to: 'apartment', auto: true, x: 0, y: 0, range: 0,
+        spawn: { x: 150, y: 520, facing: 0 },
       },
     ],
   },
@@ -309,6 +333,7 @@ function isFree(x, y) {
   const onFloor = (px, py) => room.floor.some((a) => px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h);
   if (![[x, y], [x - r, y], [x + r, y], [x, y - r], [x, y + r]].every(([px, py]) => onFloor(px, py))) return false;
   if (partner.room === room.id && circleHitsRect(x, y, r, partnerBox())) return false;
+  if (room.id === 'yard' && walk.phase !== 'clean' && x - r < 110) return false;
   return !room.obstacles.some((o) => circleHitsRect(x, y, r, o));
 }
 
@@ -334,11 +359,12 @@ const fade = { t: 0, door: null }; // t counts up through out + in while a door 
 
 function nearestDoor() {
   if (player.seat) return null;
-  return room.doors.find((d) => Math.hypot(player.x - d.x, player.y - d.y) < d.range * room.scale) ?? null;
+  return room.doors.find((d) => !d.auto && (!d.when || d.when()) && Math.hypot(player.x - d.x, player.y - d.y) < d.range * room.scale) ?? null;
 }
 
 function useDoor(door) {
   if (fade.door) return;
+  if (door.to === 'yard') walk.warning = 0; // made it: the timer stops
   fade.door = door;
   fade.t = 0;
   player.walkTime = 0;
@@ -362,6 +388,8 @@ function arriveThrough(door) {
   trail.length = 0;
   hearts.length = 0;
   kiss.progress = 0;
+  if (room.id === 'yard') startWalk();
+  if (from === 'yard') endWalk();
   resize();
   cam.snap = true;
 }
@@ -398,6 +426,14 @@ function action() {
   }
   if (canKiss()) {
     giveKiss();
+    return;
+  }
+  if (nearPoop()) {
+    pickUpPoop();
+    return;
+  }
+  if (nearBin()) {
+    throwBag();
     return;
   }
   const door = nearestDoor();
@@ -437,6 +473,8 @@ function updateActionButton() {
   let label = '';
   if (player.seat) label = isGaming() ? 'PLAY' : 'READ';
   else if (canKiss()) label = 'KISS';
+  else if (nearPoop()) label = 'PICK UP';
+  else if (nearBin()) label = 'TRASH';
   else if (nearestDoor()) label = nearestDoor().label;
   else if (nearestSeat()) label = 'SIT';
   if (fade.door) label = '';
@@ -513,10 +551,272 @@ function drawTv() {
   ctx.drawImage(tvImg, sx, sy, TV_FRAME.w, TV_FRAME.h, TV.x + (TV.w - w) / 2, TV.y, w, h);
 }
 
+// ---- Dog walks ---------------------------------------------------------------
+// Every 30 seconds indoors the dog needs to go out, and you get 10 seconds to
+// reach the front door (bottom of the living room). Out in the yard he's on a
+// leash and wanders and sniffs until he goes; pick it up, throw it in the bin,
+// then walk off the left edge to go back in. You can't go back in until you've
+// cleaned up.
+
+const WALK_EVERY = 30; // seconds indoors between walks
+const WALK_WARNING = 10; // seconds to reach the front door
+const WALK_FAIL_TIME = 3.5; // how long the "too late" message stays up
+const LEASH = 150; // leash length, map px (times the room scale)
+const SQUAT_TIME = 2.2;
+const BIN = { x: 1239, y: 268 }; // rim of the bin in the yard
+const THROW_TIME = 0.6;
+
+const walk = {
+  next: WALK_EVERY, // countdown to the next warning
+  warning: 0, // countdown while the dog is waiting at the door
+  failT: 0, // countdown for the failure message
+  phase: null, // in the yard: sniff | squat | poop | carry | clean
+  sniffed: 0, // seconds of wandering so far
+  needAfter: 0, // seconds of wandering before he goes
+  squat: 0,
+  poop: null, // { x, y } on the grass
+  throwT: 0, // 0..1 while the bag flies to the bin
+  throwFrom: null,
+};
+
+function updateWalk(dt) {
+  walk.failT = Math.max(0, walk.failT - dt);
+  if (room.id === 'yard' || fade.door) return;
+  if (walk.warning > 0) {
+    walk.warning -= dt;
+    if (walk.warning <= 0) {
+      walk.warning = 0;
+      walk.failT = WALK_FAIL_TIME;
+      walk.next = WALK_EVERY;
+    }
+    return;
+  }
+  walk.next -= dt;
+  if (walk.next <= 0) walk.warning = WALK_WARNING;
+}
+
+function startWalk() {
+  walk.warning = 0;
+  walk.phase = 'sniff';
+  walk.sniffed = 0;
+  walk.needAfter = 8 + Math.random() * 6;
+  walk.poop = null;
+  walk.throwT = 0;
+  dog.state = 'leash';
+  dog.target = null;
+  dog.sniff = 0;
+}
+
+function endWalk() {
+  walk.phase = null;
+  walk.next = WALK_EVERY;
+}
+
+function nearPoop() {
+  return walk.phase === 'poop' && walk.poop && Math.hypot(player.x - walk.poop.x, player.y - walk.poop.y) < 70 * room.scale;
+}
+function nearBin() {
+  return walk.phase === 'carry' && walk.throwT === 0 && Math.hypot(player.x - BIN.x, player.y - (BIN.y + 110)) < 120 * room.scale;
+}
+
+function pickUpPoop() {
+  walk.poop = null;
+  walk.phase = 'carry';
+  player.walkTime = 0;
+}
+
+function throwBag() {
+  walk.throwT = 0.0001;
+  walk.throwFrom = { x: player.x + Math.cos(player.facing) * 12, y: player.y - 80 * room.scale };
+  player.facing = Math.atan2(BIN.y + 110 - player.y, BIN.x - player.x);
+}
+
+function updateYard(dt) {
+  if (room.id !== 'yard') return;
+  if (walk.throwT > 0) {
+    walk.throwT += dt / THROW_TIME;
+    if (walk.throwT >= 1) {
+      walk.throwT = 0;
+      walk.phase = 'clean';
+      exciteDog();
+    }
+  }
+  // Once it's all cleaned up, walking off the left edge takes you back inside.
+  if (walk.phase === 'clean' && player.x < 60 && !fade.door) useDoor(room.doors[0]);
+}
+
+// The dog on the leash: wander to spots near you, stop to sniff, and
+// eventually squat. If he gets to the end of the leash he's pulled along.
+function updateLeashDog(dt) {
+  const L = LEASH * room.scale;
+  if (walk.squat > 0) {
+    dog.walkTime = 0;
+    walk.squat -= dt;
+    if (walk.squat <= 0) {
+      walk.poop = { x: dog.x + (dog.flip ? 22 : -22) * room.scale, y: dog.y + 2 };
+      walk.phase = 'poop';
+      dog.target = null;
+      dog.sniff = 1.5;
+    }
+    return;
+  }
+  const away = Math.hypot(player.x - dog.x, player.y - dog.y);
+  if (away > L) {
+    // Pulled along by the leash
+    dog.sniff = 0;
+    dog.target = null;
+    moveDogToward(player.x, player.y, Math.max(WALK_SPEED, RUN_SPEED * 0.9) * room.scale, dt * Math.min(1, (away - L) / 20 + 0.3));
+    return;
+  }
+  if (walk.phase === 'sniff') walk.sniffed += dt;
+  if (dog.sniff > 0) {
+    dog.walkTime = 0;
+    dog.sniff -= dt;
+    if (walk.phase === 'sniff' && walk.sniffed > walk.needAfter) {
+      walk.phase = 'squat';
+      walk.squat = SQUAT_TIME;
+    }
+    return;
+  }
+  if (!dog.target) {
+    const a = Math.random() * Math.PI * 2;
+    const d = (0.3 + Math.random() * 0.6) * L;
+    let tx = Math.min(1240, Math.max(60, player.x + Math.cos(a) * d));
+    let ty = Math.min(980, Math.max(80, player.y + Math.sin(a) * d * 0.7));
+    if (tx > 1170 && ty < 400) ty = 420; // keep out of the bin
+    dog.target = { x: tx, y: ty };
+  }
+  if (moveDogToward(dog.target.x, dog.target.y, 110 * room.scale, dt)) {
+    dog.target = null;
+    dog.sniff = 0.8 + Math.random() * 1.6;
+  }
+}
+
+function leashPose() {
+  if (walk.squat > 0) return { name: 'sit' };
+  if (dog.walkTime > 0) return { name: DOG_WALK[Math.floor(dog.stride / DOG_STEP) % DOG_WALK.length], left: dog.flip };
+  if (dog.sniff > 0) return { name: 'bow', left: dog.flip }; // nose to the grass
+  return { name: 'idle', left: dog.flip };
+}
+
+// Leash from her hand to his collar, sagging a little when slack.
+function drawLeash() {
+  if (room.id !== 'yard' || dog.state !== 'leash') return;
+  const s = room.scale;
+  const hx = player.x + Math.cos(player.facing) * 10 * s;
+  const hy = player.y - 78 * s;
+  const cx = dog.x + (dog.flip ? -1 : 1) * 16 * s;
+  const cy = dog.y - (walk.squat > 0 ? 34 : 30) * s;
+  const span = Math.hypot(cx - hx, cy - hy);
+  const sag = Math.max(0, LEASH * s - span) * 0.35;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#2a0f0a';
+  ctx.lineWidth = 3.2 * s;
+  ctx.beginPath();
+  ctx.moveTo(hx, hy);
+  ctx.quadraticCurveTo((hx + cx) / 2, (hy + cy) / 2 + sag, cx, cy);
+  ctx.stroke();
+  ctx.strokeStyle = '#b8342a';
+  ctx.lineWidth = 1.8 * s;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// A little pixel-art pile
+function drawPoopAt(x, y, k) {
+  const c = 3.6 * k;
+  const rows = ['..##..', '.####.', '######'];
+  ctx.fillStyle = '#2b170b';
+  rows.forEach((row, r) => {
+    for (let i = 0; i < row.length; i++) if (row[i] === '#') ctx.fillRect(x + (i - 3) * c - c * 0.3, y + (r - 3) * c - c * 0.3, c * 1.6, c * 1.6);
+  });
+  ctx.fillStyle = '#6b4220';
+  rows.forEach((row, r) => {
+    for (let i = 0; i < row.length; i++) if (row[i] === '#') ctx.fillRect(x + (i - 3) * c, y + (r - 3) * c, c, c);
+  });
+  ctx.fillStyle = '#93622f';
+  ctx.fillRect(x - c, y - 3 * c, c, c);
+}
+
+function drawBag(x, y, k) {
+  ctx.fillStyle = '#121a12';
+  ctx.beginPath();
+  ctx.roundRect(x - 5 * k, y - 5 * k, 10 * k, 10 * k, 3 * k);
+  ctx.fill();
+  ctx.fillStyle = '#2f5a36';
+  ctx.beginPath();
+  ctx.roundRect(x - 4 * k, y - 4 * k, 8 * k, 8 * k, 2.5 * k);
+  ctx.fill();
+  ctx.fillStyle = '#2f5a36';
+  ctx.fillRect(x - 1.5 * k, y - 8 * k, 3 * k, 4 * k); // tied top
+}
+
+function drawYardGround() {
+  if (room.id !== 'yard' || !walk.poop) return;
+  drawPoopAt(walk.poop.x, walk.poop.y, room.scale);
+}
+
+function drawYardAir() {
+  if (room.id !== 'yard') return;
+  drawLeash();
+  const s = room.scale;
+  if (walk.phase === 'carry' && walk.throwT === 0) {
+    // Dangling from her hand
+    drawBag(player.x + Math.cos(player.facing) * 8 * s, player.y - 56 * s, s * 1.2);
+  }
+  if (walk.throwT > 0) {
+    const t = walk.throwT;
+    const x = walk.throwFrom.x + (BIN.x - walk.throwFrom.x) * t;
+    const y = walk.throwFrom.y + (BIN.y - walk.throwFrom.y) * t - Math.sin(t * Math.PI) * 90 * s;
+    drawBag(x, y, s);
+  }
+}
+
+// Banner across the top of the screen
+function drawWalkBanner() {
+  let text = '';
+  let warn = false;
+  let bar = -1;
+  if (walk.failT > 0) {
+    text = 'Too late! He had an accident inside.';
+    warn = true;
+  } else if (walk.warning > 0) {
+    text = `The dog needs to go out! Get to the front door: ${Math.ceil(walk.warning)}s`;
+    warn = true;
+    bar = walk.warning / WALK_WARNING;
+  } else if (room.id === 'yard') {
+    if (walk.phase === 'sniff') text = 'Walk him around until he goes';
+    else if (walk.phase === 'squat') text = "He's going...";
+    else if (walk.phase === 'poop') text = 'Pick up after him';
+    else if (walk.phase === 'carry') text = 'Throw it in the bin';
+    else if (walk.phase === 'clean') text = 'All clean! Walk off the left edge to go back inside';
+    if (walk.phase !== 'clean' && player.x < 170) text = "You can't go back in until you've picked up after him";
+  }
+  if (!text) return;
+  ctx.font = '700 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  const w = Math.min(viewW - 24, ctx.measureText(text).width + 28);
+  const cx = viewW / 2;
+  const y = 14;
+  ctx.fillStyle = warn ? 'rgba(150, 38, 28, 0.92)' : 'rgba(28, 25, 21, 0.85)';
+  ctx.beginPath();
+  ctx.roundRect(cx - w / 2, y, w, bar >= 0 ? 40 : 30, 10);
+  ctx.fill();
+  ctx.fillStyle = '#fff4e8';
+  ctx.fillText(text, cx, y + 15, w - 16);
+  if (bar >= 0) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fillRect(cx - w / 2 + 12, y + 29, w - 24, 5);
+    ctx.fillStyle = '#ffd2a8';
+    ctx.fillRect(cx - w / 2 + 12, y + 29, (w - 24) * bar, 5);
+  }
+}
+
 // ---- Update --------------------------------------------------------------
 
 function update(dt) {
   updateFade(dt);
+  updateWalk(dt);
   updateTv(dt);
   updateCamera(dt);
   if (fade.door) {
@@ -527,6 +827,7 @@ function update(dt) {
   updatePlayer(dt);
   updateDog(dt);
   updateKiss(dt);
+  updateYard(dt);
 }
 
 function updatePlayer(dt) {
@@ -1080,6 +1381,12 @@ function drawHud() {
     pill(isTouch ? `Tap SIT to ${what}` : `Press E to sit and ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
   drawKissHud();
+  if (!player.seat && (nearPoop() || nearBin())) {
+    ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    const what = nearPoop() ? 'pick up the poop' : 'throw it in the bin';
+    pill(isTouch ? `Tap ${nearPoop() ? 'PICK UP' : 'TRASH'} to ${what}` : `Press E to ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
+  }
+  drawWalkBanner();
   if (fade.door) {
     const k = fade.t < FADE_TIME ? fade.t / FADE_TIME : 2 - fade.t / FADE_TIME;
     ctx.fillStyle = `rgba(12, 10, 8, ${Math.min(1, Math.max(0, k))})`;
@@ -1184,6 +1491,10 @@ function startHop(to, next) {
 function updateDog(dt) {
   dog.wagTime += dt;
   dog.excited = Math.max(0, dog.excited - dt);
+  if (dog.state === 'leash') {
+    updateLeashDog(dt);
+    return;
+  }
   dog.couchTime = dog.state === 'couch' ? dog.couchTime + dt : 0;
 
   // Sitting down / standing up switches what the dog is doing.
@@ -1265,6 +1576,7 @@ function exciteDog() {
 
 // Which pose to show, and whether her head should point left.
 function dogPose() {
+  if (dog.state === 'leash') return leashPose();
   if (dog.hop) return { name: 'walk4', left: dog.flip };
   if (dog.state === 'couch') {
     return { name: dog.couchTime > DOG_COUCH_SLEEP_AFTER ? 'sleep' : 'lie', left: dog.flip };
@@ -1530,7 +1842,9 @@ function render() {
     ctx.drawImage(room.img, 0, 0, room.w, room.h);
   }
   if (room.id === 'apartment') drawTv();
+  drawYardGround();
   drawActors();
+  drawYardAir();
   drawHearts();
   if (showHitboxes) drawHitboxes();
   drawHud();
