@@ -1656,6 +1656,25 @@ const WALK_CYCLES = {
   him: [[0, 4, 188, 352, 110, 352], [190, 6, 166, 350, 95, 350], [358, 1, 157, 355, 97, 355], [517, 1, 155, 355, 99, 355], [674, 0, 145, 356, 90, 356], [821, 9, 143, 347, 85, 347], [966, 1, 138, 355, 87, 355], [1106, 9, 148, 347, 92, 347], [1256, 4, 148, 352, 86, 352], [1406, 5, 181, 351, 98, 351], [1589, 4, 180, 352, 103, 352], [1771, 2, 177, 354, 107, 354], [1950, 1, 180, 355, 110, 355]],
 };
 const WALK_FRAMES = WALK_CYCLES.her.map((_, i) => `walk${i + 1}`);
+// How long each frame stays up, relative to the others. Frames that differ most
+// from the usual stance (the back leg swinging through) are held longest so
+// they read clearly.
+const WALK_HOLDS = {
+  her: [1.63, 1.3, 1.01, 1.13, 2.55, 3.0, 2.18, 1.05, 1.0, 1.29, 1.26, 1.62, 2.5],
+  him: [2.49, 1.2, 1.0, 1.02, 1.15, 1.13, 1.35, 1.09, 1.31, 3.0, 1.97, 1.71, 1.45],
+};
+
+// Frame for a point in the cycle (0..1), giving each frame its share of time.
+function walkFrameAt(who, cycle) {
+  const holds = WALK_HOLDS[who];
+  const total = holds.reduce((a, b) => a + b, 0);
+  let t = cycle * total;
+  for (let i = 0; i < holds.length; i++) {
+    if (t < holds[i]) return i;
+    t -= holds[i];
+  }
+  return holds.length - 1;
+}
 const CHARS = {
   her: {
     name: 'her',
@@ -1675,8 +1694,8 @@ const CHARS = {
   },
 };
 const GAIT = {
-  walkCycle: 270, // map px per full 13-frame cycle (~8 frames a second walking)
-  runCycle: 380, // ~10.5 frames a second running
+  walkCycle: 380, // map px per full 13-frame cycle (about 2.3 s walking)
+  runCycle: 480, // about 1.5 s running
   bob: 1.5, // sprite px the body rises between steps
 };
 // Add each character's walk frames to their pose table, drawn from their walk image.
@@ -1735,7 +1754,7 @@ function actorPose(ch, actor, other) {
   if (actor.walkTime > 0) {
     if (actor.moveDx !== 0) {
       const cycle = actor.gait % 1;
-      const frame = WALK_FRAMES[Math.floor(cycle * WALK_FRAMES.length) % WALK_FRAMES.length];
+      const frame = WALK_FRAMES[walkFrameAt(ch.name, cycle)];
       // Up a little as the feet pass, down as they spread: twice per cycle
       const bob = -Math.abs(Math.sin(cycle * Math.PI * 2)) * GAIT.bob;
       return { name: frame, mirror: actor.moveDx < 0, bob };
