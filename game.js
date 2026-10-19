@@ -461,12 +461,14 @@ const TV_SCREENS = {
 };
 // Timed sequences: [screen, seconds]; the last step holds.
 const TV_SEQUENCES = {
-  boot: [['title', 1.4], ['menu', 0.9], ['transition', 1.2], ['play', 0]],
-  victory: [['victory', 1.8], ['transition', 1.1], ['play', 0]],
-  gameover: [['gameover', 2.2], ['idle', 0]],
+  boot: [['title', 2.5], ['menu', 2], ['transition', 2.5], ['play', 0]],
+  victory: [['victory', 3], ['transition', 2.5], ['play', 0]],
+  gameover: [['gameover', 3.5], ['idle', 0]],
   idle: [['idle', 0]],
 };
 const tv = { mode: 'idle', t: 0 };
+const TV_IDLE_FPS = 1.5; // waterfall frames per second
+const TV_PLAY_FPS = 3; // gameplay frames per second
 
 function tvShow(mode) {
   tv.mode = mode;
@@ -488,10 +490,10 @@ function tvScreen() {
     }
     t -= len;
   }
-  if (step === 'idle') return TV_SCREENS.idle[Math.floor(tv.t * 4) % 8];
+  if (step === 'idle') return TV_SCREENS.idle[Math.floor(tv.t * TV_IDLE_FPS) % 8];
   if (step === 'play') {
     if (isGaming() && reading.sinceTurn > GLANCE_AFTER) return TV_SCREENS.pause;
-    return TV_SCREENS.play[Math.floor(t * 8) % TV_SCREENS.play.length];
+    return TV_SCREENS.play[Math.floor(t * TV_PLAY_FPS) % TV_SCREENS.play.length];
   }
   return TV_SCREENS[step];
 }
