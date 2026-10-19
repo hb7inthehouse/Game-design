@@ -1608,15 +1608,6 @@ const HER_FRAMES = {
   backRight: { r: [318, 0, 101, 342], ax: 54, ay: 342 },
   back: { r: [421, 0, 113, 342], ax: 56, ay: 342, hem: 210 },
   backLeft: { r: [536, 0, 101, 342], ax: 45, ay: 342 },
-  walk1: { r: [639, 0, 190, 334], ax: 101, ay: 334 },
-  walk2: { r: [831, 0, 204, 334], ax: 108, ay: 334 },
-  walk3: { r: [1037, 0, 208, 334], ax: 110, ay: 334 },
-  walk4: { r: [1247, 0, 214, 334], ax: 113, ay: 334 },
-  walk5: { r: [1463, 0, 214, 332], ax: 109, ay: 332 },
-  walk6: { r: [1679, 0, 212, 334], ax: 112, ay: 334 },
-  walk7: { r: [0, 346, 219, 338], ax: 115, ay: 338 },
-  walk8: { r: [221, 346, 197, 334], ax: 104, ay: 334 },
-  walk9: { r: [420, 346, 192, 334], ax: 101, ay: 334 },
   idle: { r: [614, 346, 118, 344], ax: 58, ay: 344 },
   happy: { r: [734, 346, 138, 344], ax: 81, ay: 344 },
   peace: { r: [874, 346, 150, 344], ax: 92, ay: 344 },
@@ -1645,15 +1636,6 @@ const HIM_FRAMES = {
   phone: { r: [1448, 0, 154, 363], ax: 69, ay: 363 },
   floorSit: { r: [1604, 0, 196, 263], ax: 97, ay: 263 },
   crouch: { r: [1802, 0, 165, 264], ax: 89, ay: 264 },
-  walk1: { r: [0, 368, 224, 349], ax: 111, ay: 349 },
-  walk2: { r: [226, 368, 206, 352], ax: 101, ay: 352 },
-  walk3: { r: [434, 368, 219, 352], ax: 109, ay: 352 },
-  walk4: { r: [655, 368, 214, 354], ax: 110, ay: 354 },
-  walk5: { r: [871, 368, 228, 356], ax: 109, ay: 356 },
-  walk6: { r: [1101, 368, 235, 354], ax: 116, ay: 354 },
-  walk7: { r: [1338, 368, 235, 356], ax: 119, ay: 356 },
-  walk8: { r: [1575, 368, 217, 356], ax: 109, ay: 356 },
-  walk9: { r: [1794, 368, 217, 356], ax: 111, ay: 356 },
 };
 
 function loadImage(src) {
@@ -1666,12 +1648,20 @@ function loadImage(src) {
 // sheet, mirrored for walking left. Frames advance with distance walked so the
 // steps keep pace with the ground, and the body rises and falls a touch with
 // each step.
-const WALK_FRAMES = ['walk1', 'walk2', 'walk3', 'walk4', 'walk5', 'walk6', 'walk7', 'walk8', 'walk9'];
+// Each cycle is 13 frames, ordered for the smoothest loop (assets/*-walkcycle.png):
+// [x, y, w, h, anchorX, anchorY], anchored under the head so the body doesn't
+// drift while the legs change.
+const WALK_CYCLES = {
+  her: [[0, 2, 167, 332, 97, 332], [169, 4, 161, 330, 91, 330], [332, 3, 150, 331, 87, 331], [484, 3, 142, 331, 85, 331], [628, 3, 120, 331, 79, 331], [750, 6, 125, 328, 79, 328], [877, 5, 123, 329, 76, 329], [1002, 4, 141, 330, 82, 330], [1145, 0, 148, 334, 84, 334], [1295, 2, 147, 332, 80, 332], [1444, 3, 165, 331, 89, 331], [1611, 4, 168, 330, 91, 330], [1781, 4, 175, 330, 100, 330]],
+  him: [[0, 4, 188, 352, 110, 352], [190, 6, 166, 350, 95, 350], [358, 1, 157, 355, 97, 355], [517, 1, 155, 355, 99, 355], [674, 0, 145, 356, 90, 356], [821, 9, 143, 347, 85, 347], [966, 1, 138, 355, 87, 355], [1106, 9, 148, 347, 92, 347], [1256, 4, 148, 352, 86, 352], [1406, 5, 181, 351, 98, 351], [1589, 4, 180, 352, 103, 352], [1771, 2, 177, 354, 107, 354], [1950, 1, 180, 355, 110, 355]],
+};
+const WALK_FRAMES = WALK_CYCLES.her.map((_, i) => `walk${i + 1}`);
 const CHARS = {
   her: {
     name: 'her',
     img: loadImage('assets/her.png'),
     frames: HER_FRAMES,
+    walkImg: loadImage('assets/her-walkcycle.png'),
     idlePoses: ['happy', 'peace', 'armsCrossed', 'phone', 'idle'],
     backIdle: 'backpack', // idle pose while facing away
   },
@@ -1679,15 +1669,22 @@ const CHARS = {
     name: 'him',
     img: loadImage('assets/him.png'),
     frames: HIM_FRAMES,
+    walkImg: loadImage('assets/him-walkcycle.png'),
     idlePoses: ['armsCrossed', 'phone', 'crouch', 'happy', 'idle'],
     backIdle: null,
   },
 };
 const GAIT = {
-  walkCycle: 240, // map px per full walk cycle (~6 frames a second walking)
-  runCycle: 330, // ~8.5 frames a second running
-  bob: 2.5, // sprite px the body rises between steps
+  walkCycle: 270, // map px per full 13-frame cycle (~8 frames a second walking)
+  runCycle: 380, // ~10.5 frames a second running
+  bob: 1.5, // sprite px the body rises between steps
 };
+// Add each character's walk frames to their pose table, drawn from their walk image.
+for (const ch of Object.values(CHARS)) {
+  WALK_CYCLES[ch.name].forEach(([x, y, w, h, ax, ay], i) => {
+    ch.frames[`walk${i + 1}`] = { r: [x, y, w, h], ax, ay, img: ch.walkImg };
+  });
+}
 const LEG_LIFT = 14; // sprite px a foot rises when walking straight up or down
 
 // Idle routine: after a short pause they strike a pose now and then, and after
@@ -1799,13 +1796,13 @@ function seatedPose(ch, seat) {
 
 // Draw part of a pose: [sx, sy, sw, sh] within the pose, at sprite offset (dx, dy).
 function blitPose(ch, f, sx, sy, sw, sh, dx, dy) {
-  ctx.drawImage(ch.img, f.r[0] + sx, f.r[1] + sy, sw, sh, sx - f.ax + dx, sy - f.ay + dy, sw, sh);
+  ctx.drawImage(f.img ?? ch.img, f.r[0] + sx, f.r[1] + sy, sw, sh, sx - f.ax + dx, sy - f.ay + dy, sw, sh);
 }
 
 // Draw a character standing at (x, y). `actor` supplies the walk state.
 function drawCharacter(ch, pose, x, y, actor, opts = {}) {
-  if (!spriteReady(ch.img)) return;
   const f = ch.frames[pose.name];
+  if (!spriteReady(f.img ?? ch.img)) return;
   const [, , w, h] = f.r;
 
   ctx.save();
