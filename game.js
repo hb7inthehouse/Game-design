@@ -268,6 +268,11 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.code === 'KeyH' && !e.repeat) showHitboxes = !showHitboxes;
+  if (dialogue.menu && ['ArrowUp', 'KeyW', 'ArrowDown', 'KeyS'].includes(e.code)) {
+    e.preventDefault();
+    moveChoice(e.code === 'ArrowUp' || e.code === 'KeyW' ? -1 : 1);
+    return;
+  }
   if (ACTION_KEYS.includes(e.code)) {
     e.preventDefault();
     if (!e.repeat) action(); // holding doesn't count; you have to mash it
@@ -283,6 +288,7 @@ document.querySelectorAll('#dpad button').forEach((btn) => {
   const dir = btn.dataset.dir;
   const press = (e) => {
     e.preventDefault();
+    if (dialogue.menu && (dir === 'up' || dir === 'down')) moveChoice(dir === 'up' ? -1 : 1);
     touchDirs.add(dir);
     btn.classList.add('active');
   };
@@ -328,7 +334,10 @@ for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
 canvas.addEventListener('pointerdown', (e) => {
   if (dialogue.active) {
     e.preventDefault();
-    advanceDialogue();
+    const r = canvas.getBoundingClientRect();
+    const hit = choiceAt(e.clientX - r.left, e.clientY - r.top);
+    if (hit >= 0) chooseOption(hit);
+    else advanceDialogue();
   } else if (book.active) {
     e.preventDefault();
     bookPointerDown(e);
@@ -449,7 +458,7 @@ function action() {
     return;
   }
   if (canKiss()) {
-    giveKiss();
+    startTalk();
     return;
   }
   if (nearPoop()) {
@@ -499,7 +508,7 @@ function standUp(dx, dy) {
 function updateActionButton() {
   let label = '';
   if (player.seat) label = isGaming() ? 'HIT' : 'READ';
-  else if (canKiss()) label = 'KISS';
+  else if (canKiss()) label = 'TALK';
   else if (nearPoop()) label = 'PICK UP';
   else if (nearBin()) label = 'TRASH';
   else if (nearestDoor()) label = nearestDoor().label;
@@ -1872,11 +1881,194 @@ const KISS_TALKS = [
   [['b', 'The dog is staring at us, you know.'], ['a', "Let him stare. He's jealous."], ['b', 'Fair. Okay, my turn to steal some kisses.']],
   [['b', "I'm keeping count. That's at least a dozen."], ['a', 'Then I owe you another dozen.'], ['b', "I'll hold you to that."]],
 ];
-const dialogue = { active: false, lines: [], i: 0, shown: 0, onDone: null, talk: 0 };
+const dialogue = { active: false, lines: [], i: 0, shown: 0, onDone: null, talk: 0, menu: null };
+
+// ---- Talking ----------------------------------------------------------------------
+// Walk up to the other person and press TALK. They say something, and a menu
+// of things to say pops up next to the text box: pick one with up/down (or tap
+// it) and press E / NEXT. Each choice plays a short exchange and either comes
+// back to the menu, ends the chat, or leads to a kiss.
+// In lines, 'me' is whoever you're playing and 'you' is the other person.
+// Text can be one string, a list (one is picked at random), or a function.
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
+const MAIN_CHOICES = [
+  { label: 'Kiss', to: 'kiss' },
+  { label: "How's your day going?", to: 'day' },
+  { label: 'What should we do?', to: 'plans' },
+  { label: 'You look really cute today.', to: 'compliment' },
+  { label: "How's the pup doing?", to: 'dog' },
+  { label: 'See you in a bit.', to: 'bye' },
+];
+const TALK_TREE = {
+  hello: {
+    lines: [['you', ['Hey, you.', 'Oh, hi! What\'s up?', 'There you are.', 'Hiii. Need something?']]],
+    choices: MAIN_CHOICES,
+  },
+  menu: { lines: [['you', ['Anything else?', 'What else is on your mind?', 'Mm-hm?']]], choices: MAIN_CHOICES },
+  kiss: { lines: [['me', ['Come here, you.', 'C\'mere for a sec.', 'I owe you a kiss.']], ['you', ['Oh? Okay...', 'Mwah!', 'Finally.']]], action: 'kiss' },
+  day: {
+    lines: [['me', 'How\'s your day going?'], ['you', () => {
+      if (partner.who === 'her' && reading.chapters > 0) return `Really good! I've read ${reading.chapters} chapter${reading.chapters === 1 ? '' : 's'} of my book.`;
+      if (partner.who === 'him' && reading.levels > 0) return `Pretty great. I made it to level ${reading.levels + 1} in Forest Falls.`;
+      return pick(['Slow, honestly. Better now that you\'re here.', 'Busy! But good.', 'It\'s been a cozy one.']);
+    }]],
+    choices: [
+      { label: 'That\'s great!', to: 'day_great' },
+      { label: 'Want to do something together?', to: 'plans' },
+      { label: 'Never mind.', to: 'menu' },
+    ],
+  },
+  day_great: { lines: [['me', 'That\'s great!'], ['you', 'Thanks. I like that you always ask.']], to: 'menu' },
+  plans: {
+    lines: [['me', 'What should we do?'], ['you', 'Hmm... we could hang out on the couch, or take the pup for a walk. Your pick.']],
+    choices: [
+      { label: 'Couch and cuddles.', to: 'plans_couch' },
+      { label: 'Let\'s take the dog out.', to: 'plans_walk' },
+      { label: 'Maybe later.', to: 'menu' },
+    ],
+  },
+  plans_couch: { lines: [['me', 'Couch and cuddles.'], ['you', 'Deal. But kiss first, that\'s the rule.']], choices: [{ label: 'Kiss', to: 'kiss' }, { label: 'Rules are rules...', to: 'kiss' }, { label: 'Ha. Later.', to: 'menu' }] },
+  plans_walk: {
+    lines: [['me', 'Let\'s take the dog out.'], ['you', 'Good idea. He\'s been giving us the eyes.']],
+    action: 'walk',
+  },
+  compliment: {
+    lines: [['me', 'You look really cute today.'], ['you', ['Stoppp. ...Okay, keep going.', 'Who, me?', 'You\'re just saying that.']]],
+    choices: [
+      { label: 'I mean it.', to: 'compliment_mean' },
+      { label: 'Just teasing.', to: 'compliment_tease' },
+    ],
+  },
+  compliment_mean: { lines: [['me', 'I mean it.'], ['you', '...Okay, now you HAVE to kiss me.']], choices: [{ label: 'Kiss', to: 'kiss' }, { label: 'Make me.', to: 'kiss' }, { label: 'Ha, later.', to: 'menu' }] },
+  compliment_tease: { lines: [['me', 'Just teasing.'], ['you', 'Wow. Rude. I\'m telling the dog.']], to: 'menu' },
+  dog: {
+    lines: [['me', 'How\'s the pup doing?'], ['you', ['He stole one of my socks again.', 'He did the zoomies around the couch earlier.', 'Asleep on my side of the bed, obviously.']]],
+    choices: [
+      { label: 'Bad dog!', to: 'dog_bad' },
+      { label: 'Good boy.', to: 'dog_good' },
+    ],
+  },
+  dog_bad: { lines: [['me', 'Bad dog!'], ['you', 'You don\'t mean that. Look at that face.']], to: 'menu', after: () => exciteDog() },
+  dog_good: { lines: [['me', 'Good boy.'], ['you', 'He really is. Best boy.']], to: 'menu', after: () => exciteDog() },
+  bye: { lines: [['me', 'See you in a bit.'], ['you', ['Don\'t be long!', 'Okay, bye bye.', 'I\'ll be here.']]] },
+};
+
+function talkText(t) {
+  const v = typeof t === 'function' ? t() : Array.isArray(t) ? pick(t) : t;
+  return v;
+}
+
+function startTalk() {
+  player.wave = 0;
+  player.idleTime = 0;
+  player.walkTime = 0;
+  player.facing = Math.atan2(partner.y - player.y, partner.x - player.x);
+  partner.facing = Math.atan2(player.y - partner.y, player.x - partner.x);
+  dialogue.active = true;
+  dialogue.blink = 0;
+  playTalkNode('hello');
+}
+
+function playTalkNode(id) {
+  const node = TALK_TREE[id];
+  dialogue.menu = null;
+  dialogue.lines = (node.lines || []).map(([who, text]) => ({ who: who === 'me' ? player.who : partner.who, text: talkText(text) }));
+  dialogue.i = 0;
+  dialogue.shown = 0;
+  dialogue.onDone = () => {
+    node.after?.();
+    if (node.choices) {
+      dialogue.active = true;
+      // Keep the last line up while choosing
+      dialogue.i = Math.max(0, dialogue.lines.length - 1);
+      dialogue.shown = dialogue.lines[dialogue.i]?.text.length ?? 0;
+      dialogue.menu = { options: node.choices, sel: 0 };
+    } else if (node.to) {
+      dialogue.active = true;
+      playTalkNode(node.to);
+    } else if (node.action === 'kiss') {
+      giveKiss();
+    } else if (node.action === 'walk') {
+      if (walk.warning <= 0 && room.id !== 'yard') walk.next = Math.min(walk.next, 0.5);
+    }
+  };
+}
+
+function chooseOption(i) {
+  const m = dialogue.menu;
+  if (!m) return;
+  const opt = m.options[i ?? m.sel];
+  dialogue.menu = null;
+  playTalkNode(opt.to);
+}
+
+function moveChoice(d) {
+  const m = dialogue.menu;
+  if (!m) return;
+  m.sel = (m.sel + d + m.options.length) % m.options.length;
+}
+
+// Where the choice list sits on screen (above the text box, on the right).
+function choiceLayout() {
+  const m = dialogue.menu;
+  const boxW = Math.min(viewW - 24, 720);
+  const boxH = viewW < 500 ? 118 : 132;
+  const rowH = viewW < 500 ? 26 : 28;
+  ctx.font = '600 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  const w = Math.min(boxW, Math.max(...m.options.map((o) => ctx.measureText(o.label).width)) + 52);
+  const h = m.options.length * rowH + 16;
+  const x = (viewW + boxW) / 2 - w;
+  const y = viewH - boxH - 14 - h - 8;
+  return { x, y, w, h, rowH };
+}
+
+function choiceAt(sx, sy) {
+  if (!dialogue.menu) return -1;
+  const L = choiceLayout();
+  if (sx < L.x || sx > L.x + L.w || sy < L.y + 8 || sy > L.y + L.h - 8) return -1;
+  return Math.min(dialogue.menu.options.length - 1, Math.floor((sy - L.y - 8) / L.rowH));
+}
+
+function drawChoices() {
+  const m = dialogue.menu;
+  if (!m) return;
+  const L = choiceLayout();
+  ctx.fillStyle = 'rgba(18, 14, 24, 0.94)';
+  ctx.beginPath();
+  ctx.roundRect(L.x, L.y, L.w, L.h, 10);
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#efe6d8';
+  ctx.stroke();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  m.options.forEach((o, i) => {
+    const y = L.y + 8 + i * L.rowH + L.rowH / 2;
+    const on = i === m.sel;
+    if (on) {
+      ctx.fillStyle = 'rgba(239, 230, 216, 0.12)';
+      ctx.beginPath();
+      ctx.roundRect(L.x + 6, y - L.rowH / 2 + 2, L.w - 12, L.rowH - 4, 6);
+      ctx.fill();
+      ctx.fillStyle = '#ffd27a';
+      ctx.beginPath();
+      ctx.moveTo(L.x + 16, y - 6);
+      ctx.lineTo(L.x + 24, y);
+      ctx.lineTo(L.x + 16, y + 6);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.font = `${on ? 700 : 600} 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
+    ctx.fillStyle = o.to === 'kiss' ? '#ff9fc0' : on ? '#fff6e6' : '#d9cfc0';
+    ctx.fillText((o.to === 'kiss' ? '♥ ' : '') + o.label, L.x + 32, y + 1);
+  });
+  ctx.textAlign = 'center';
+}
 
 function startKissTalk(kisser, kissed, onDone) {
   const talk = KISS_TALKS[dialogue.talk % KISS_TALKS.length];
   dialogue.talk += 1;
+  dialogue.menu = null;
   dialogue.lines = talk.map(([who, text]) => ({ who: who === 'a' ? kisser : kissed, text }));
   dialogue.i = 0;
   dialogue.shown = 0;
@@ -1886,7 +2078,16 @@ function startKissTalk(kisser, kissed, onDone) {
 }
 
 function advanceDialogue() {
+  if (dialogue.menu) {
+    chooseOption();
+    return;
+  }
   const line = dialogue.lines[dialogue.i];
+  if (!line) {
+    dialogue.active = false;
+    dialogue.onDone?.();
+    return;
+  }
   if (dialogue.shown < line.text.length) {
     dialogue.shown = line.text.length; // finish typing first
     return;
@@ -1895,7 +2096,9 @@ function advanceDialogue() {
   dialogue.shown = 0;
   if (dialogue.i >= dialogue.lines.length) {
     dialogue.active = false;
-    dialogue.onDone?.();
+    const done = dialogue.onDone;
+    dialogue.onDone = null;
+    done?.();
   }
 }
 
@@ -1993,7 +2196,7 @@ function drawDialogue() {
     ctx.fillText(part, tx, py + 26 + k * lh);
   });
   // Blinking "next" arrow once the line is out
-  if (dialogue.shown >= line.text.length && Math.floor(dialogue.blink * 2.5) % 2 === 0) {
+  if (!dialogue.menu && dialogue.shown >= line.text.length && Math.floor(dialogue.blink * 2.5) % 2 === 0) {
     const ax = bx + boxW - 24;
     const ay = by + boxH - 22;
     ctx.fillStyle = '#efe6d8';
@@ -2006,6 +2209,7 @@ function drawDialogue() {
   }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  drawChoices();
 }
 
 // ---- Dog walks ---------------------------------------------------------------
@@ -3076,8 +3280,6 @@ function drawDog() {
 // then you swap and play as them. Afterwards there's a quiet 5 second
 // cooldown before they'll take more.
 
-const KISS_PER_PRESS = 0.08; // ~13 kisses fill the bar
-const KISS_DECAY = 0.1;
 const KISS_COOLDOWN = 5; // seconds, not shown on screen
 const CELEBRATE_TIME = 2.4;
 
@@ -3145,15 +3347,12 @@ function giveKiss() {
   player.walkTime = 0;
   // A little heart pops up between them with every kiss
   addHeart((player.x + partner.x) / 2, Math.min(player.y, partner.y) - 150 * room.scale, false);
-  kiss.progress = Math.min(1, kiss.progress + KISS_PER_PRESS);
-  if (kiss.progress >= 1) {
-    kiss.progress = 0;
-    kiss.celebrate = CELEBRATE_TIME;
-    kiss.cooldown = KISS_COOLDOWN;
-    player.cheer = CHEER_TIME;
-    exciteDog();
-    kiss.burstLeft = 22;
-  }
+  for (let i = 0; i < 3; i++) addHeart((player.x + partner.x) / 2 + (i - 1) * 14, Math.min(player.y, partner.y) - 150 * room.scale, false);
+  kiss.celebrate = CELEBRATE_TIME;
+  kiss.cooldown = KISS_COOLDOWN;
+  player.cheer = CHEER_TIME;
+  exciteDog();
+  kiss.burstLeft = 22;
 }
 
 function updateKiss(dt) {
@@ -3163,7 +3362,6 @@ function updateKiss(dt) {
     // Have a little chat, then swap who you're playing
     if (kiss.celebrate === 0) startKissTalk(player.who, partner.who, swapCharacters);
   }
-  if (kiss.progress > 0) kiss.progress = Math.max(0, kiss.progress - KISS_DECAY * dt);
 
   // Release the celebration hearts over the first part of the jump
   if (kiss.burstLeft > 0) {
@@ -3226,41 +3424,14 @@ function drawHearts() {
   }
 }
 
-// Bar over their head while kissing; nothing at all during the cooldown.
+// "Press E to talk" over the other person when you're close enough.
 function drawKissHud() {
   if (partner.room !== room.id || kiss.cooldown > 0 || kiss.celebrate > 0 || player.seat || dialogue.active) return;
-  if (!nearPartner() && kiss.progress === 0) return;
+  if (!nearPartner()) return;
   const sx = toScreenX(partner.x);
   const sy = toScreenY(partner.y - poseHeight(partner.who, partnerPose()) - 6);
-  const w = 96;
-  const h = 12;
-  const bx = sx - w / 2;
-  const by = sy - 22;
-
-  ctx.fillStyle = 'rgba(28, 25, 21, 0.8)';
-  ctx.beginPath();
-  ctx.roundRect(bx - 2, by - 2, w + 4, h + 4, 8);
-  ctx.fill();
-  ctx.fillStyle = '#3a2b33';
-  ctx.beginPath();
-  ctx.roundRect(bx, by, w, h, 6);
-  ctx.fill();
-  if (kiss.progress > 0) {
-    const g = ctx.createLinearGradient(bx, 0, bx + w, 0);
-    g.addColorStop(0, '#ff7aa2');
-    g.addColorStop(1, '#ffb3c8');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.roundRect(bx, by, Math.max(h, w * kiss.progress), h, 6);
-    ctx.fill();
-  }
-  // Heart badge on the left end of the bar
-  drawHeart(bx - 2, by + h / 2, 2, 1);
-
-  if (kiss.progress === 0 && nearPartner()) {
-    ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
-    pill(isTouch ? 'Tap KISS fast' : 'Mash E to give kisses', sx, by + h + 16, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
-  }
+  ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  pill(isTouch ? 'Tap TALK to chat' : 'Press E to talk', sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
 }
 
 // Draw everyone back to front so whoever is lower on screen is in front.
