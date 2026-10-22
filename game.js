@@ -2015,7 +2015,12 @@ function drawDialogue() {
 // then walk off the left edge to go back in. You can't go back in until you've
 // cleaned up.
 
-const WALK_EVERY = 30; // seconds indoors between walks
+// The dog needs to go out at a random moment every 2 to 4 minutes indoors.
+const WALK_MIN = 120;
+const WALK_MAX = 240;
+function nextWalkIn() {
+  return WALK_MIN + Math.random() * (WALK_MAX - WALK_MIN);
+}
 const WALK_WARNING = 10; // seconds to reach the front door
 const WALK_FAIL_TIME = 3.5; // how long the "too late" message stays up
 const LEASH = 150; // leash length, map px (times the room scale)
@@ -2024,7 +2029,7 @@ const BIN = { x: 1239, y: 268 }; // rim of the bin in the yard
 const THROW_TIME = 0.6;
 
 const walk = {
-  next: WALK_EVERY, // countdown to the next warning
+  next: nextWalkIn(), // countdown to the next warning
   warning: 0, // countdown while the dog is waiting at the door
   failT: 0, // countdown for the failure message
   phase: null, // in the yard: sniff | squat | poop | carry | clean
@@ -2044,7 +2049,7 @@ function updateWalk(dt) {
     if (walk.warning <= 0) {
       walk.warning = 0;
       walk.failT = WALK_FAIL_TIME;
-      walk.next = WALK_EVERY;
+      walk.next = nextWalkIn();
     }
     return;
   }
@@ -2071,7 +2076,7 @@ function startWalk() {
 
 function endWalk() {
   walk.phase = null;
-  walk.next = WALK_EVERY;
+  walk.next = nextWalkIn();
 }
 
 function nearPoop() {

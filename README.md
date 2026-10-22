@@ -33,7 +33,7 @@ She's a pixel-art sprite set (`assets/her.png`): 8 standing directions, a walk a
 
 The camera is zoomed in and follows her. The dog (a pixel-art sprite sheet in `assets/dog.png`) walks along behind her, and when she stops it stands, sits facing her, lies down and eventually falls asleep. It naps on the couch while she reads and does a play bow when she finishes a chapter or fills the kiss bar.
 
-Every 30 seconds indoors the dog needs to go out: a banner gives you 10 seconds to reach the front door at the bottom of the living room and press WALK, or he has an accident. Outside (`assets/yard.jpg`) he's on a leash and wanders and sniffs until he goes. Pick it up (PICK UP), throw it in the bin (TRASH), then walk off the left edge to go back inside. You can't go back in until you've cleaned up.
+At a random moment every 2 to 4 minutes indoors the dog needs to go out: a banner gives you 10 seconds to reach the front door at the bottom of the living room and press WALK, or he has an accident. Outside (`assets/yard.jpg`) he's on a leash and wanders and sniffs until he goes. Pick it up (PICK UP), throw it in the bin (TRASH), then walk off the left edge to go back inside. You can't go back in until you've cleaned up.
 
 ## Tweaking
 
