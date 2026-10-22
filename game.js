@@ -150,7 +150,6 @@ function partnerBox() {
 const SIT_RANGE = 80;
 
 // Reading: spam the action button to fill the bar and finish a chapter.
-const READ_PER_PRESS = 0.075; // ~14 presses per chapter
 const READ_DECAY = 0.08; // bar drains this much per second when you stop
 const CHAPTER_POP_TIME = 1.8; // seconds "Chapter Complete" stays up
 
@@ -256,6 +255,18 @@ const KEY_DIRS = {
 const ACTION_KEYS = ['KeyE', 'Space', 'Enter'];
 
 window.addEventListener('keydown', (e) => {
+  if (ff.active) {
+    // Forest Falls has the keyboard: jump is read from held keys, attack and quit here
+    e.preventDefault();
+    if (e.code === 'Escape') ffClose();
+    else if (['KeyE', 'KeyX', 'KeyJ', 'Enter'].includes(e.code) && !e.repeat) ff.attackQueued = true;
+    else if (['Space', 'ArrowUp', 'KeyW', 'KeyZ', 'KeyK'].includes(e.code) && !e.repeat) {
+      ffPressJump(); // a quick tap can land between frames, so press on keydown
+      ff.jumpWas = true;
+    }
+    keys.add(e.code);
+    return;
+  }
   if (e.code === 'KeyH' && !e.repeat) showHitboxes = !showHitboxes;
   if (ACTION_KEYS.includes(e.code)) {
     e.preventDefault();
@@ -289,9 +300,19 @@ document.querySelectorAll('#dpad button').forEach((btn) => {
 const runBtn = document.getElementById('run');
 runBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  if (ff.active) {
+    ff.touchJump = true; // it's the JUMP button in Forest Falls
+    return;
+  }
   runToggle = !runToggle;
   runBtn.setAttribute('aria-pressed', String(runToggle));
 });
+
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+  runBtn.addEventListener(ev, () => {
+    ff.touchJump = false;
+  });
+}
 
 const actionBtn = document.getElementById('action');
 actionBtn.addEventListener('pointerdown', (e) => {
@@ -311,10 +332,9 @@ canvas.addEventListener('pointerdown', (e) => {
   } else if (book.active) {
     e.preventDefault();
     bookPointerDown(e);
-  } else if (isGaming()) {
-    // Tapping the room while gaming presses the button too
+  } else if (ff.active) {
     e.preventDefault();
-    action();
+    ffPointerDown(e);
   }
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -425,24 +445,7 @@ function action() {
   }
   if (fade.door || book.active) return;
   if (player.seat) {
-    if (!isGaming()) return; // reading is the drag-to-read minigame
-    if (reading.popTime > CHAPTER_POP_TIME - 0.5) return; // brief pause after a chapter
-    reading.progress = Math.min(1, reading.progress + READ_PER_PRESS);
-    reading.flipTime = 0.25;
-    reading.sinceTurn = 0;
-    if (reading.progress >= 1) {
-      if (isGaming()) {
-        reading.levels += 1;
-        saveCount('levelsCleared', reading.levels);
-        tvShow('victory');
-      } else {
-        reading.chapters += 1;
-        saveChapters(reading.chapters);
-      }
-      reading.progress = 0;
-      reading.popTime = CHAPTER_POP_TIME;
-      exciteDog();
-    }
+    if (ff.active) ff.attackQueued = true; // HIT in Forest Falls
     return;
   }
   if (canKiss()) {
@@ -467,7 +470,7 @@ function action() {
     player.seat = seat;
     player.walkTime = 0;
     reading.progress = 0;
-    if (isGaming()) tvShow('boot');
+    if (gamesHere()) ffOpen();
     else openBook();
   }
 }
@@ -481,8 +484,10 @@ function isGaming() {
 }
 
 function standUp(dx, dy) {
-  // Quitting mid-level is a game over; otherwise the TV goes back to idling.
-  if (isGaming()) tvShow(reading.progress > 0 && tvScreen() !== TV_SCREENS.victory ? 'gameover' : 'idle');
+  if (ff.active) {
+    ff.active = false;
+    runBtn.textContent = 'RUN';
+  }
   const seat = player.seat;
   player.seat = null;
   player.x = seat.approach.x;
@@ -493,7 +498,7 @@ function standUp(dx, dy) {
 
 function updateActionButton() {
   let label = '';
-  if (player.seat) label = isGaming() ? 'PLAY' : 'READ';
+  if (player.seat) label = isGaming() ? 'HIT' : 'READ';
   else if (canKiss()) label = 'KISS';
   else if (nearPoop()) label = 'PICK UP';
   else if (nearBin()) label = 'TRASH';
@@ -506,72 +511,886 @@ function updateActionButton() {
 }
 
 // ---- TV --------------------------------------------------------------------
-// The living-room TV shows frames from a little platformer (assets/tv.jpg:
-// 160 x 96 screens, 8 per row). It idles on the waterfall; while he plays it
-// runs title, menu and level intro, then loops running, jumping and combat.
-// A cleared level shows Stage Clear, leaving mid-level shows Game Over, and
-// it pauses if he stops pressing buttons.
-
-const tvImg = loadImage('assets/tv.jpg');
+// The living-room TV shows the map's own still picture, and mirrors the Forest
+// Falls game while he's playing it.
 const TV = { x: 293, y: 137, w: 210, h: 71 }; // the screen on the map
-const TV_FRAME = { w: 160, h: 96, perRow: 8 };
-const TV_SCREENS = {
-  idle: [0, 1, 2, 3, 4, 5, 6, 7],
-  play: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
-  title: 32, menu: 33, pause: 34, transition: 35, gameover: 36, victory: 37,
-};
-// Timed sequences: [screen, seconds]; the last step holds.
-const TV_SEQUENCES = {
-  boot: [['title', 2.5], ['menu', 2], ['transition', 2.5], ['play', 0]],
-  victory: [['victory', 3], ['transition', 2.5], ['play', 0]],
-  gameover: [['gameover', 3.5], ['idle', 0]],
-  idle: [['idle', 0]],
-};
-const tv = { mode: 'idle', t: 0 };
-const TV_PLAY_FPS = 3; // gameplay frames per second
-
-function tvShow(mode) {
-  tv.mode = mode;
-  tv.t = 0;
-}
-
-function updateTv(dt) {
-  tv.t += dt;
-}
-
-function tvScreen() {
-  const seq = TV_SEQUENCES[tv.mode];
-  let t = tv.t;
-  let step = seq[seq.length - 1][0];
-  for (const [name, len] of seq) {
-    if (len === 0 || t < len) {
-      step = name;
-      break;
-    }
-    t -= len;
-  }
-  if (step === 'idle') return -1; // off: the TV shows the map's own still picture
-  if (step === 'play') {
-    if (isGaming() && reading.sinceTurn > GLANCE_AFTER) return TV_SCREENS.pause;
-    return TV_SCREENS.play[Math.floor(t * TV_PLAY_FPS) % TV_SCREENS.play.length];
-  }
-  return TV_SCREENS[step];
-}
 
 function drawTv() {
-  if (!spriteReady(tvImg)) return;
-  const i = tvScreen();
-  if (i < 0) return;
-  const sx = (i % TV_FRAME.perRow) * TV_FRAME.w;
-  const sy = Math.floor(i / TV_FRAME.perRow) * TV_FRAME.h;
-  // The TV is wider than the game's screens: fit the height, stretch a little,
-  // and leave the sides dark.
+  if (!ff.active) return;
   const h = TV.h;
-  const w = Math.min(TV.w, h * (TV_FRAME.w / TV_FRAME.h) * 1.25);
+  const w = Math.min(TV.w, h * (FF_W / FF_H));
   ctx.fillStyle = '#05070a';
   ctx.fillRect(TV.x, TV.y, TV.w, TV.h);
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(tvImg, sx, sy, TV_FRAME.w, TV_FRAME.h, TV.x + (TV.w - w) / 2, TV.y, w, h);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(ffCanvas, TV.x + (TV.w - w) / 2, TV.y, w, h);
+  ctx.imageSmoothingEnabled = true;
+}
+
+// ---- Forest Falls: the video game on the TV --------------------------------
+// When he sits down on the living-room couch he plays a real side-scrolling
+// platformer, built from the Forest Falls sprite sheet (assets/forest.png for
+// sprites and tiles, assets/forest-bg.jpg for backgrounds and screens). It runs
+// on its own 480 x 270 canvas, shown full screen and mirrored on the room's TV.
+//
+// Controls: left/right to run, jump (Space, Up, W or the JUMP button) and
+// attack (E, X or the HIT button). Stomp or slash slimes, birds and bats, slash
+// the biting plants, grab coins, and reach the flag. Every third level ends in
+// a fight with the stone golem. Lose all four hearts and it's game over.
+
+const FF_W = 480;
+const FF_H = 270;
+const FF_T = 24; // tile size
+const FF_ROWS = 12;
+const FF_SPR = {"idle0":[0,0,21,38],"idle1":[23,0,24,39],"idle2":[49,0,24,39],"idle3":[75,0,20,39],"idle4":[97,0,19,39],"run0":[118,0,22,32],"run1":[142,0,22,35],"run2":[166,0,24,37],"run3":[192,0,24,36],"run4":[218,0,21,38],"run5":[241,0,21,37],"jump0":[264,0,26,37],"jump1":[292,0,22,33],"jump2":[316,0,19,34],"jump3":[337,0,19,33],"jump4":[358,0,21,35],"jump5":[381,0,19,30],"fall0":[402,0,21,38],"fall1":[425,0,21,36],"fall2":[448,0,19,36],"fall3":[469,0,19,39],"fall4":[490,0,18,34],"attack0":[510,0,18,35],"attack1":[530,0,19,32],"attack2":[551,0,25,35],"attack3":[578,0,33,32],"slime0":[613,0,24,20],"slime1":[639,0,24,15],"slime2":[665,0,24,15],"slime3":[691,0,26,22],"slimeDead0":[719,0,28,22],"bat0":[749,0,20,17],"bat1":[771,0,28,17],"bat2":[801,0,23,15],"bird0":[826,0,20,20],"bird1":[848,0,19,18],"bird2":[869,0,20,19],"bird3":[891,0,18,16],"bird4":[911,0,18,15],"bird5":[931,0,18,14],"plant0":[951,0,21,33],"plant1":[974,0,20,33],"plant2":[996,0,20,33],"plant3":[0,41,22,32],"golem0":[24,41,85,83],"golem1":[111,41,85,87],"golem2":[198,41,85,87],"golem3":[285,41,92,85],"golemThrow0":[379,41,97,97],"boulder0":[478,41,22,24],"coin0":[502,41,13,14],"gem0":[517,41,14,16],"heart0":[533,41,16,14],"heartEmpty0":[551,41,14,12],"face0":[567,41,16,18],"flag0":[585,41,50,76],"grass":[637,41,24,24],"dirt":[663,41,24,24],"rock":[689,41,24,24],"crate":[715,41,24,24],"plank":[741,41,24,9],"waterTop":[767,41,24,14],"waterfall":[793,41,24,56]};
+const FF_BGS = {"far":[0,0,366,270],"mid":[368,0,295,270],"near":[665,0,202,270],"title":[869,0,547,270],"gameover":[1418,0,392,270]};
+const ffImg = loadImage('assets/forest.png');
+const ffBgImg = loadImage('assets/forest-bg.jpg');
+const ffCanvas = document.createElement('canvas');
+ffCanvas.width = FF_W;
+ffCanvas.height = FF_H;
+const fx = ffCanvas.getContext('2d');
+
+const FF = {
+  gravity: 1050,
+  run: 125,
+  accel: 900,
+  jump: 370,
+  coyote: 0.1,
+  buffer: 0.13,
+  hearts: 4,
+  invuln: 1.3,
+  attackTime: 0.3,
+};
+
+const ff = {
+  active: false,
+  state: 'title', // title | intro | play | clear | over
+  t: 0,
+  level: 1,
+  lvl: null,
+  p: null,
+  enemies: [],
+  shots: [], // boulders
+  parts: [],
+  coins: 0,
+  levelCoins: 0,
+  hearts: FF.hearts,
+  camX: 0,
+  touchJump: false,
+  jumpWas: false,
+  attackQueued: false,
+  shake: 0,
+};
+
+function ffRng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---- Levels -------------------------------------------------------------------
+// Built from chunks (flat runs, steps, pits, bridges, floating planks, crates)
+// with a seed per level, so level 4 is always the same level 4. Later levels
+// are longer and busier.
+function ffGenerate(n) {
+  const R = ffRng(n * 7919 + 17);
+  const ground = [];
+  const solids = new Map(); // "c,r" -> tile name, for crates and pillars
+  const planks = new Set(); // "c,r" one-way platforms
+  const enemies = [];
+  const coins = [];
+  const deco = [];
+  const len = Math.min(70 + n * 12, 170);
+  const boss = n % 3 === 0;
+  let c = 0;
+  let g = 9;
+  const T = FF_T;
+  const flat = (k) => {
+    for (let i = 0; i < k; i++) ground[c++] = g;
+  };
+  const coinRow = (c0, k, row) => {
+    for (let i = 0; i < k; i++) coins.push({ x: (c0 + i) * T + T / 2, y: row * T + T / 2, kind: 'coin' });
+  };
+  const add = (type, col, extra = {}) => enemies.push({ type, x: col * T + T / 2, y: g * T, ...extra });
+  flat(10);
+  coinRow(5, 3, g - 2);
+  while (c < len) {
+    const r = R();
+    if (r < 0.2) {
+      const k = 5 + Math.floor(R() * 5);
+      const c0 = c;
+      flat(k);
+      coinRow(c0 + 1, Math.min(4, k - 2), g - 2);
+      if (R() < 0.55 + n * 0.05) add('slime', c0 + Math.floor(k / 2), { dir: R() < 0.5 ? -1 : 1 });
+      if (n >= 2 && R() < 0.25) add('slime', c0 + k - 1, { dir: -1 });
+    } else if (r < 0.36) {
+      const ng = Math.max(6, Math.min(9, g + (R() < 0.5 ? -1 : 1) * (1 + Math.floor(R() * 2))));
+      const c0 = c;
+      g = ng;
+      const k = 3 + Math.floor(R() * 4);
+      flat(k);
+      if (g < 9) for (let i = 0; i < k; i++) if (R() < 0.25) solids.set(`${c0 + i},${g}`, 'rock');
+      if (n >= 2 && k >= 4 && R() < 0.5) add('plant', c0 + Math.floor(k / 2));
+      else coins.push({ x: (c0 + 1) * T + T / 2, y: (g - 2) * T + T / 2, kind: R() < 0.15 ? 'gem' : 'coin' });
+    } else if (r < 0.52) {
+      const w = 2 + Math.floor(R() * Math.min(2, 1 + n / 3));
+      deco.push({ type: 'waterfall', c: c });
+      for (let i = 0; i < w; i++) ground[c++] = -1;
+      // Coins arc over the gap
+      for (let i = 0; i < 3; i++) coins.push({ x: (c - w) * T + (w * T * (i + 1)) / 4, y: (g - 2.2 - Math.sin(((i + 1) / 4) * Math.PI) * 1.3) * T, kind: 'coin' });
+      flat(3);
+    } else if (r < 0.66) {
+      const w = 4 + Math.floor(R() * 3);
+      const c0 = c;
+      for (let i = 0; i < w; i++) {
+        ground[c] = -1;
+        planks.add(`${c},${g}`);
+        c++;
+      }
+      coinRow(c0 + 1, w - 2, g - 2);
+      if (n >= 2 || R() < 0.5) enemies.push({ type: 'bird', x: (c0 + w / 2) * T, y: (g - 3) * T, home: (c0 + w / 2) * T });
+      flat(3);
+    } else if (r < 0.78) {
+      const w = 5 + Math.floor(R() * 2);
+      const c0 = c;
+      for (let i = 0; i < w; i++) ground[c++] = -1;
+      const pc = c0 + Math.floor(w / 2) - 1;
+      planks.add(`${pc},${g - 2}`);
+      planks.add(`${pc + 1},${g - 2}`);
+      coinRow(pc, 2, g - 3);
+      if (R() < 0.3) coins.push({ x: (pc + 1) * T, y: (g - 5) * T, kind: 'gem' });
+      flat(3);
+    } else if (r < 0.88) {
+      flat(2);
+      const tall = n >= 2 && R() < 0.5 ? 2 : 1;
+      for (let i = 0; i < tall; i++) solids.set(`${c},${g - 1 - i}`, 'crate');
+      coins.push({ x: c * T + T / 2, y: (g - tall - 1) * T + T / 2, kind: 'coin' });
+      flat(1);
+      flat(3);
+    } else {
+      const c0 = c;
+      flat(6);
+      if (n >= 2) {
+        enemies.push({ type: 'bat', x: (c0 + 3) * T, y: (g - 4) * T, home: (c0 + 3) * T });
+        if (n >= 4 && R() < 0.5) enemies.push({ type: 'bat', x: (c0 + 5) * T, y: (g - 5) * T, home: (c0 + 5) * T });
+      } else {
+        coinRow(c0 + 1, 4, g - 2);
+      }
+    }
+  }
+  // A heart to pick up halfway through, from level 2
+  if (n >= 2) {
+    for (let col = Math.floor(c / 2); col < c; col++) {
+      if (ground[col] > 0) {
+        coins.push({ x: col * T + T / 2, y: (ground[col] - 1) * T + T / 2, kind: 'heart' });
+        break;
+      }
+    }
+  }
+  let bossInfo = null;
+  g = 9;
+  if (boss) {
+    const a0 = c;
+    flat(20);
+    bossInfo = { x0: (a0 + 1) * T, x1: (c - 1) * T };
+    enemies.push({ type: 'golem', x: (c - 5) * T, y: g * T, hp: 3 + Math.floor(n / 6), x0: bossInfo.x0, x1: bossInfo.x1 });
+  }
+  flat(4);
+  const flagCol = c - 1;
+  flat(8);
+  return { n, cols: c, ground, solids, planks, enemies, coins, deco, flagX: flagCol * T + T / 2, boss: bossInfo };
+}
+
+function ffTile(c, r) {
+  const L = ff.lvl;
+  if (c < 0 || c >= L.cols || r < 0) return null;
+  const g = L.ground[c];
+  if (g >= 0 && r >= g) return r === g ? 'grass' : 'dirt';
+  return L.solids.get(`${c},${r}`) ?? null;
+}
+
+// ---- Bodies ------------------------------------------------------------------
+// x is the centre, y the feet; w and h the box.
+function ffMove(o, dt, oneWay = true) {
+  const T = FF_T;
+  o.hitWall = false;
+  o.x += o.vx * dt;
+  const top = o.y - o.h;
+  const r0 = Math.floor((top + 1) / T);
+  const r1 = Math.floor((o.y - 1) / T);
+  if (o.vx > 0) {
+    const col = Math.floor((o.x + o.w / 2) / T);
+    for (let r = r0; r <= r1; r++) {
+      if (ffTile(col, r)) {
+        o.x = col * T - o.w / 2 - 0.01;
+        o.vx = 0;
+        o.hitWall = true;
+        break;
+      }
+    }
+  } else if (o.vx < 0) {
+    const col = Math.floor((o.x - o.w / 2) / T);
+    for (let r = r0; r <= r1; r++) {
+      if (ffTile(col, r)) {
+        o.x = (col + 1) * T + o.w / 2 + 0.01;
+        o.vx = 0;
+        o.hitWall = true;
+        break;
+      }
+    }
+  }
+  const maxX = ff.lvl.cols * T - o.w / 2;
+  if (o.x < o.w / 2) { o.x = o.w / 2; o.hitWall = true; }
+  if (o.x > maxX) { o.x = maxX; o.hitWall = true; }
+
+  const prevY = o.y;
+  o.y += o.vy * dt;
+  o.onGround = false;
+  const c0 = Math.floor((o.x - o.w / 2 + 1) / T);
+  const c1 = Math.floor((o.x + o.w / 2 - 1) / T);
+  if (o.vy >= 0) {
+    const row = Math.floor(o.y / T);
+    for (let col = c0; col <= c1; col++) {
+      const plank = oneWay && ff.lvl.planks.has(`${col},${row}`) && prevY <= row * T + 0.5 && !o.dropThrough;
+      if (ffTile(col, row) || plank) {
+        o.y = row * T;
+        o.vy = 0;
+        o.onGround = true;
+        o.onPlank = !!plank && !ffTile(col, row);
+        break;
+      }
+    }
+  } else {
+    const row = Math.floor((o.y - o.h) / T);
+    for (let col = c0; col <= c1; col++) {
+      if (ffTile(col, row)) {
+        o.y = (row + 1) * T + o.h;
+        o.vy = 0;
+        break;
+      }
+    }
+  }
+}
+
+function ffOverlap(a, b) {
+  return Math.abs(a.x - b.x) * 2 < a.w + b.w && a.y - a.h < b.y && b.y - b.h < a.y;
+}
+
+// ---- Flow ----------------------------------------------------------------------
+function ffOpen() {
+  ff.active = true;
+  ff.state = 'title';
+  ff.t = 0;
+  ff.level = (reading.levels || 0) + 1;
+  ff.coins = 0;
+  ff.touchJump = false;
+  ff.jumpWas = true; // the press that sat him down doesn't count
+  ff.attackQueued = false;
+  runBtn.textContent = 'JUMP';
+  runBtn.setAttribute('aria-pressed', 'false');
+  runToggle = false;
+}
+
+function ffClose() {
+  ff.active = false;
+  runBtn.textContent = 'RUN';
+  if (player.seat) standUp(0, 1);
+}
+
+function ffStartLevel() {
+  ff.lvl = ffGenerate(ff.level);
+  const T = FF_T;
+  ff.p = { x: 2 * T, y: 9 * T, w: 14, h: 30, vx: 0, vy: 0, face: 1, onGround: true, coyote: 0, buffer: 0, attackT: 0, attackId: 0, invuln: 0, anim: 0, dist: 0, safe: { x: 2 * T, y: 9 * T } };
+  ff.enemies = ff.lvl.enemies.map((e) => ffMakeEnemy(e));
+  ff.coinsLeft = ff.lvl.coins.map((c) => ({ ...c, taken: false }));
+  ff.shots = [];
+  ff.parts = [];
+  ff.hearts = FF.hearts;
+  ff.levelCoins = 0;
+  ff.camX = 0;
+  ff.state = 'intro';
+  ff.t = 0;
+}
+
+function ffMakeEnemy(e) {
+  const base = { ...e, vx: 0, vy: 0, dead: false, deadT: 0, anim: Math.random() * 3, hitId: -1 };
+  switch (e.type) {
+    case 'slime': return { ...base, w: 20, h: 16, vx: 28 * (e.dir || 1), hp: 1, stomp: true };
+    case 'plant': return { ...base, w: 16, h: 30, hp: 1, stomp: false };
+    case 'bird': return { ...base, w: 16, h: 14, hp: 1, stomp: true, baseY: e.y, vx: 40 };
+    case 'bat': return { ...base, w: 16, h: 14, hp: 1, stomp: true, baseY: e.y };
+    case 'golem': return { ...base, w: 52, h: 78, stomp: true, vx: -30, throwT: 2, hurtT: 0, throwAnim: 0 };
+    default: return base;
+  }
+}
+
+function ffPressJump() {
+  if (ff.state === 'title') { ffStartLevel(); return; }
+  if (ff.state === 'over') { ffStartLevel(); return; }
+  if (ff.state === 'play') ff.p.buffer = FF.buffer;
+}
+
+function ffPressAttack() {
+  if (ff.state === 'title' || ff.state === 'over') { ffPressJump(); return; }
+  if (ff.state === 'play' && ff.p.attackT <= 0) {
+    ff.p.attackT = FF.attackTime;
+    ff.p.attackId += 1;
+  }
+}
+
+function ffJumpHeld() {
+  return ff.touchJump || touchDirs.has('up') || ['Space', 'ArrowUp', 'KeyW', 'KeyZ', 'KeyK'].some((k) => keys.has(k));
+}
+
+function ffHurt(fromX) {
+  const p = ff.p;
+  if (p.invuln > 0 || ff.state !== 'play') return;
+  ff.hearts -= 1;
+  p.invuln = FF.invuln;
+  p.vx = (p.x < fromX ? -1 : 1) * 170;
+  p.vy = -230;
+  ff.shake = 0.25;
+  ffBurst(p.x, p.y - 15, '#ff5c6a', 8);
+  if (ff.hearts <= 0) {
+    ff.state = 'over';
+    ff.t = 0;
+  }
+}
+
+function ffBurst(x, y, color, n = 10) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 40 + Math.random() * 90;
+    ff.parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, t: 0, life: 0.4 + Math.random() * 0.3, color });
+  }
+}
+
+function ffKill(e, how) {
+  e.dead = true;
+  e.deadT = 0;
+  ffBurst(e.x, e.y - e.h / 2, how === 'slash' ? '#cfe8ff' : '#a6e36b', 12);
+}
+
+// ---- Update --------------------------------------------------------------------
+function updateFF(dt) {
+  ff.t += dt;
+  ff.shake = Math.max(0, ff.shake - dt);
+  const held = ffJumpHeld();
+  if (held && !ff.jumpWas) ffPressJump();
+  ff.jumpWas = held;
+  if (ff.attackQueued) {
+    ff.attackQueued = false;
+    ffPressAttack();
+  }
+  if (ff.state === 'intro') {
+    if (ff.t > 1.6) { ff.state = 'play'; ff.t = 0; }
+    return;
+  }
+  if (ff.state === 'title' || ff.state === 'over') return;
+  if (ff.state === 'clear') {
+    const p = ff.p;
+    p.vx = 70;
+    p.vy += FF.gravity * dt;
+    ffMove(p, dt);
+    p.dist += Math.abs(p.vx * dt);
+    if (ff.t > 3.4) {
+      reading.levels = Math.max(reading.levels || 0, ff.level);
+      saveCount('levelsCleared', reading.levels);
+      ff.level += 1;
+      ffStartLevel();
+    }
+    ffUpdateParts(dt);
+    return;
+  }
+  ffUpdatePlayer(dt);
+  ffUpdateEnemies(dt);
+  ffUpdateCoins();
+  ffUpdateParts(dt);
+  const target = Math.min(Math.max(ff.p.x - FF_W * 0.4, 0), ff.lvl.cols * FF_T - FF_W);
+  ff.camX += (target - ff.camX) * Math.min(1, dt * 8);
+  // Reached the flag (after the golem, if there is one)
+  const bossAlive = ff.enemies.some((e) => e.type === 'golem' && !e.dead);
+  if (!bossAlive && ff.p.x > ff.lvl.flagX - 8) {
+    ff.state = 'clear';
+    ff.t = 0;
+    ffBurst(ff.lvl.flagX, ff.p.y - 60, '#ffd75e', 24);
+    exciteDog();
+  }
+}
+
+function ffUpdatePlayer(dt) {
+  const p = ff.p;
+  const dirs = heldDirs();
+  const left = dirs.has('left');
+  const right = dirs.has('right');
+  const want = (right ? 1 : 0) - (left ? 1 : 0);
+  if (want) p.face = want;
+  const target = want * FF.run * (p.attackT > 0 && p.onGround ? 0.4 : 1);
+  const a = FF.accel * (p.onGround ? 1 : 0.65);
+  if (p.vx < target) p.vx = Math.min(target, p.vx + a * dt);
+  else if (p.vx > target) p.vx = Math.max(target, p.vx - a * dt);
+
+  p.coyote = p.onGround ? FF.coyote : Math.max(0, p.coyote - dt);
+  p.buffer = Math.max(0, p.buffer - dt);
+  if (p.buffer > 0 && p.coyote > 0) {
+    p.vy = -FF.jump;
+    p.buffer = 0;
+    p.coyote = 0;
+    p.onGround = false;
+  }
+  // Let go early for a short hop
+  if (!ffJumpHeld() && p.vy < -140) p.vy = -140;
+  p.vy = Math.min(p.vy + FF.gravity * dt, 620);
+  p.dropThrough = dirs.has('down') && p.onPlank;
+  ffMove(p, dt);
+  p.dist += Math.abs(p.vx * dt);
+  p.anim += dt;
+  p.invuln = Math.max(0, p.invuln - dt);
+  p.attackT = Math.max(0, p.attackT - dt);
+  if (p.onGround && !p.onPlank) {
+    const col = Math.floor(p.x / FF_T);
+    if (ff.lvl.ground[col] >= 0 && ff.lvl.ground[col - 1] >= 0 && ff.lvl.ground[col + 1] >= 0) p.safe = { x: p.x, y: p.y };
+  }
+  // Fell into the water
+  if (p.y > FF_H + 40) {
+    ff.hearts -= 1;
+    ffBurst(p.x, FF_H - 10, '#7fd0ff', 14);
+    if (ff.hearts <= 0) {
+      ff.state = 'over';
+      ff.t = 0;
+      return;
+    }
+    p.x = p.safe.x;
+    p.y = p.safe.y;
+    p.vx = 0;
+    p.vy = 0;
+    p.invuln = FF.invuln;
+  }
+}
+
+function ffAttackBox() {
+  const p = ff.p;
+  const t = FF.attackTime - p.attackT;
+  if (p.attackT <= 0 || t < 0.05 || t > 0.24) return null;
+  return { x: p.x + p.face * 20, y: p.y - 4, w: 30, h: 28 };
+}
+
+function ffUpdateEnemies(dt) {
+  const p = ff.p;
+  const slash = ffAttackBox();
+  for (const e of ff.enemies) {
+    e.anim += dt;
+    if (e.dead) {
+      e.deadT += dt;
+      continue;
+    }
+    if (e.type === 'slime') {
+      e.vy = Math.min(e.vy + FF.gravity * dt, 600);
+      const before = e.vx;
+      ffMove(e, dt);
+      if (e.hitWall) e.vx = -before;
+      // Turn at ledges
+      const ahead = Math.floor((e.x + Math.sign(e.vx) * (e.w / 2 + 2)) / FF_T);
+      if (e.onGround && !ffTile(ahead, Math.floor(e.y / FF_T))) e.vx = -e.vx;
+      if (e.y > FF_H + 40) e.dead = true;
+    } else if (e.type === 'bird') {
+      e.x += e.vx * dt;
+      if (Math.abs(e.x - e.home) > 70) e.vx = -Math.sign(e.x - e.home) * Math.abs(e.vx);
+      e.y = e.baseY + Math.sin(e.anim * 2.4) * 14;
+    } else if (e.type === 'bat') {
+      const dx = p.x - e.x;
+      if (Math.abs(dx) < 170) {
+        // Swoop at you
+        e.x += Math.sign(dx) * 55 * dt;
+        e.y = e.baseY + Math.sin(e.anim * 3.2) * 22 + Math.max(0, 40 - Math.abs(dx) / 3);
+      } else {
+        e.x += Math.sin(e.anim) * 20 * dt;
+        e.y = e.baseY + Math.sin(e.anim * 2) * 8;
+      }
+    } else if (e.type === 'golem') {
+      ffUpdateGolem(e, dt);
+    }
+    // Slashed
+    if (slash && e.hitId !== p.attackId && ffOverlap(slash, e)) {
+      e.hitId = p.attackId;
+      if (e.type === 'golem') ffHitGolem(e);
+      else ffKill(e, 'slash');
+      continue;
+    }
+    if (!ffOverlap(p, e)) continue;
+    // Stomped: falling onto its head
+    if (e.stomp && p.vy > 60 && p.y - (e.y - e.h) < 14) {
+      p.vy = -FF.jump * 0.7;
+      if (e.type === 'golem') ffHitGolem(e);
+      else ffKill(e, 'stomp');
+      continue;
+    }
+    ffHurt(e.x);
+  }
+  // Boulders
+  for (const s of ff.shots) {
+    s.vy += 760 * dt;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.spin += s.vx * dt * 0.05;
+    const row = Math.floor(s.y / FF_T);
+    if (s.vy > 0 && ffTile(Math.floor(s.x / FF_T), row)) {
+      s.y = row * FF_T;
+      s.vy = -Math.abs(s.vy) * 0.35;
+      s.bounces += 1;
+    }
+    s.t += dt;
+    if (slash && ffOverlap(slash, s)) {
+      s.dead = true;
+      ffBurst(s.x, s.y - 10, '#9b8565', 10);
+    } else if (ffOverlap(p, s)) {
+      s.dead = true;
+      ffHurt(s.x);
+    }
+    if (s.t > 4 || s.y > FF_H + 60) s.dead = true;
+  }
+  ff.shots = ff.shots.filter((s) => !s.dead);
+}
+
+function ffUpdateGolem(e, dt) {
+  const p = ff.p;
+  e.hurtT = Math.max(0, e.hurtT - dt);
+  e.throwAnim = Math.max(0, e.throwAnim - dt);
+  const awake = p.x > e.x0 - 40;
+  if (!awake) return;
+  e.face = p.x < e.x ? -1 : 1;
+  if (e.throwAnim <= 0 && e.hurtT <= 0) {
+    e.x += e.face * 32 * dt;
+    e.x = Math.max(e.x0 + 30, Math.min(e.x1 - 30, e.x));
+  }
+  e.throwT -= dt;
+  if (e.throwT <= 0) {
+    e.throwT = Math.max(1.3, 2.4 - ff.level * 0.06);
+    e.throwAnim = 0.45;
+    const dx = p.x - e.x;
+    ff.shots.push({ x: e.x + e.face * 30, y: e.y - 70, w: 18, h: 18, vx: Math.max(-230, Math.min(230, dx / 1.1)), vy: -300, t: 0, spin: 0, bounces: 0 });
+  }
+}
+
+function ffHitGolem(e) {
+  if (e.hurtT > 0) return;
+  e.hp -= 1;
+  e.hurtT = 0.7;
+  ff.shake = 0.3;
+  ffBurst(e.x, e.y - 50, '#c9b48a', 14);
+  if (e.hp <= 0) {
+    ffKill(e, 'slash');
+    ff.shake = 0.6;
+    for (let i = 0; i < 4; i++) ffBurst(e.x + (Math.random() - 0.5) * 50, e.y - Math.random() * 70, '#8a7a55', 10);
+  }
+}
+
+function ffUpdateCoins() {
+  const p = ff.p;
+  for (const c of ff.coinsLeft) {
+    if (c.taken) continue;
+    if (Math.abs(c.x - p.x) < 14 && c.y > p.y - p.h - 8 && c.y < p.y + 6) {
+      c.taken = true;
+      if (c.kind === 'heart') ff.hearts = Math.min(FF.hearts, ff.hearts + 1);
+      else {
+        const v = c.kind === 'gem' ? 5 : 1;
+        ff.coins += v;
+        ff.levelCoins += v;
+      }
+      ffBurst(c.x, c.y, c.kind === 'gem' ? '#7fd0ff' : c.kind === 'heart' ? '#ff6b7a' : '#ffd75e', 6);
+    }
+  }
+}
+
+function ffUpdateParts(dt) {
+  for (const q of ff.parts) {
+    q.t += dt;
+    q.vy += 300 * dt;
+    q.x += q.vx * dt;
+    q.y += q.vy * dt;
+  }
+  ff.parts = ff.parts.filter((q) => q.t < q.life);
+}
+
+// ---- Drawing -------------------------------------------------------------------
+function ffSpr(name, x, y, flip = false, alpha = 1) {
+  const r = FF_SPR[name];
+  if (!r) return;
+  const [sx, sy, w, h] = r;
+  fx.save();
+  fx.globalAlpha = alpha;
+  fx.translate(Math.round(x), Math.round(y));
+  if (flip) fx.scale(-1, 1);
+  fx.drawImage(ffImg, sx, sy, w, h, -Math.round(w / 2), -h, w, h);
+  fx.restore();
+}
+
+function ffBgLayer(name, parallax, y, mirrorTiles = true) {
+  const [sx, sy, w, h] = FF_BGS[name];
+  const off = -((ff.camX * parallax) % (w * 2));
+  for (let x = off - w * 2; x < FF_W + w; x += w) {
+    const i = Math.round((x - off) / w);
+    fx.save();
+    if (mirrorTiles && i % 2 !== 0) {
+      fx.translate(Math.round(x) + w, 0);
+      fx.scale(-1, 1);
+      fx.drawImage(ffBgImg, sx, sy, w, h, 0, y, w, h);
+    } else {
+      fx.drawImage(ffBgImg, sx, sy, w, h, Math.round(x), y, w, h);
+    }
+    fx.restore();
+  }
+}
+
+function ffText(text, x, y, size, color, align = 'center') {
+  fx.font = `800 ${size}px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
+  fx.textAlign = align;
+  fx.textBaseline = 'middle';
+  fx.lineWidth = Math.max(3, size / 4);
+  fx.strokeStyle = '#0b1210';
+  fx.strokeText(text, x, y);
+  fx.fillStyle = color;
+  fx.fillText(text, x, y);
+}
+
+function drawFF() {
+  if (!spriteReady(ffImg) || !spriteReady(ffBgImg)) return;
+  fx.imageSmoothingEnabled = false;
+  fx.setTransform(1, 0, 0, 1, 0, 0);
+  if (ff.state === 'title') {
+    const [sx, sy, w, h] = FF_BGS.title;
+    fx.drawImage(ffBgImg, sx + (w - FF_W) / 2, sy, FF_W, h, 0, 0, FF_W, FF_H);
+    // The art says PRESS A: here that's JUMP (Space on a keyboard)
+    if (Math.floor(ff.t * 2) % 2 === 0) ffText(isTouch ? '(A = JUMP)' : '(A = Space)', FF_W / 2, 262, 9, '#fff4c8');
+    ffText(`Best: level ${reading.levels || 0}`, 10, 14, 10, '#cfe8c8', 'left');
+    return;
+  }
+  if (ff.state === 'over') {
+    const [sx, sy, w, h] = FF_BGS.gameover;
+    fx.fillStyle = '#1a0605';
+    fx.fillRect(0, 0, FF_W, FF_H);
+    fx.drawImage(ffBgImg, sx, sy, w, h, (FF_W - w) / 2, 0, w, h);
+    if (Math.floor(ff.t * 2) % 2 === 0) ffText(isTouch ? 'Tap JUMP to retry' : 'Press Space to retry', FF_W / 2, 250, 13, '#ffd2c8');
+    return;
+  }
+  const shake = ff.shake > 0 ? (Math.random() - 0.5) * 6 * (ff.shake / 0.3) : 0;
+  fx.setTransform(1, 0, 0, 1, Math.round(shake), 0);
+  // Sky and parallax forest
+  fx.fillStyle = '#163847';
+  fx.fillRect(-10, 0, FF_W + 20, FF_H);
+  ffBgLayer('mid', 0.3, 0);
+  const cam = Math.round(ff.camX);
+  fx.save();
+  fx.translate(-cam, 0);
+  ffDrawWorld(cam);
+  fx.restore();
+  fx.setTransform(1, 0, 0, 1, 0, 0);
+  ffDrawHud();
+  if (ff.state === 'intro') {
+    fx.fillStyle = `rgba(6, 12, 10, ${Math.max(0, 0.75 - Math.max(0, ff.t - 1.1) * 1.5)})`;
+    fx.fillRect(0, 0, FF_W, FF_H);
+    ffText(`LEVEL ${ff.level}`, FF_W / 2, FF_H / 2 - 14, 26, '#ffe27a');
+    ffText(ff.lvl.boss ? 'The golem awaits...' : 'Forest Falls', FF_W / 2, FF_H / 2 + 16, 13, '#d8f0d0');
+  }
+  if (ff.state === 'clear' && ff.t > 0.4) {
+    const k = Math.min(1, (ff.t - 0.4) * 4);
+    ffText('LEVEL COMPLETE!', FF_W / 2, 92, 16 + 10 * k, '#ffe27a');
+    if (ff.t > 1) ffText(`Coins: ${ff.levelCoins}`, FF_W / 2, 124, 13, '#fff4c8');
+  }
+}
+
+function ffDrawWorld(cam) {
+  const L = ff.lvl;
+  const T = FF_T;
+  const c0 = Math.max(0, Math.floor(cam / T) - 1);
+  const c1 = Math.min(L.cols - 1, Math.ceil((cam + FF_W) / T) + 1);
+  const [wx, wy, ww, wh] = FF_SPR.waterfall;
+  // Waterfalls behind the pits
+  for (const d of L.deco) {
+    if (d.c < c0 - 3 || d.c > c1 + 3) continue;
+    const scroll = Math.floor((ff.t * 60) % wh);
+    for (let y = 120 - wh; y < FF_H; y += wh) {
+      fx.globalAlpha = 0.8;
+      fx.drawImage(ffImg, wx, wy, ww, wh, d.c * T + 6, y + scroll, ww, wh);
+    }
+    fx.globalAlpha = 1;
+  }
+  // Water in the pits
+  const [tx, ty, tw, th] = FF_SPR.waterTop;
+  const waterY = FF_H - 26 + Math.round(Math.sin(ff.t * 2) * 1.5);
+  for (let c = c0; c <= c1; c++) {
+    if (L.ground[c] >= 0) continue;
+    fx.fillStyle = '#123f7a';
+    fx.fillRect(c * T, waterY + th - 2, T, FF_H);
+    fx.drawImage(ffImg, tx, ty, tw, th, c * T, waterY, T, th);
+  }
+  // Ground, crates and rocks
+  for (let c = c0; c <= c1; c++) {
+    for (let r = 0; r < FF_ROWS; r++) {
+      const t = ffTile(c, r);
+      if (!t) continue;
+      const [sx, sy, w, h] = FF_SPR[t];
+      fx.drawImage(ffImg, sx, sy, w, h, c * T, r * T, T, T);
+    }
+  }
+  // Planks: bridges and floating platforms
+  const [px, py, pw, ph] = FF_SPR.plank;
+  for (const k of L.planks) {
+    const [c, r] = k.split(',').map(Number);
+    if (c < c0 || c > c1) continue;
+    fx.drawImage(ffImg, px, py, pw, ph, c * T, r * T, T, ph);
+  }
+  // Flag
+  const bossAlive = ff.enemies.some((e) => e.type === 'golem' && !e.dead);
+  ffSpr('flag0', L.flagX + 14, (L.ground[Math.floor(L.flagX / T)] || 9) * T + 2, false, bossAlive ? 0.35 : 1);
+  // Coins and pickups
+  for (const c of ff.coinsLeft) {
+    if (c.taken || c.x < cam - 20 || c.x > cam + FF_W + 20) continue;
+    const bob = Math.round(Math.sin(ff.t * 4 + c.x * 0.05) * 2);
+    ffSpr(`${c.kind}0`, c.x, c.y + 7 + bob);
+  }
+  // Enemies
+  for (const e of ff.enemies) {
+    if (e.x < cam - 120 || e.x > cam + FF_W + 120) continue;
+    ffDrawEnemy(e);
+  }
+  for (const s of ff.shots) ffSpr('boulder0', s.x, s.y + 4);
+  ffDrawPlayer();
+  for (const q of ff.parts) {
+    fx.globalAlpha = 1 - q.t / q.life;
+    fx.fillStyle = q.color;
+    fx.fillRect(Math.round(q.x) - 1, Math.round(q.y) - 1, 3, 3);
+  }
+  fx.globalAlpha = 1;
+}
+
+function ffDrawEnemy(e) {
+  const a = e.dead ? Math.max(0, 1 - e.deadT * 2.5) : 1;
+  if (a <= 0) return;
+  switch (e.type) {
+    case 'slime':
+      if (e.dead) ffSpr('slimeDead0', e.x, e.y, false, a);
+      else ffSpr(`slime${Math.floor(e.anim * 6) % 4}`, e.x, e.y + 1, e.vx > 0);
+      break;
+    case 'plant': {
+      const near = Math.abs(ff.p.x - e.x) < 70;
+      ffSpr(`plant${Math.floor(e.anim * (near ? 9 : 4)) % 4}`, e.x, e.y + 1, ff.p.x > e.x, a);
+      break;
+    }
+    case 'bird':
+      ffSpr(`bird${Math.floor(e.anim * 8) % 6}`, e.x, e.y + 8, e.vx < 0, a);
+      break;
+    case 'bat':
+      ffSpr(`bat${Math.floor(e.anim * 8) % 3}`, e.x, e.y + 8, ff.p.x < e.x, a);
+      break;
+    case 'golem': {
+      const name = e.throwAnim > 0 ? 'golemThrow0' : `golem${Math.floor(e.anim * 3) % 4}`;
+      const flash = e.hurtT > 0 && Math.floor(e.hurtT * 14) % 2 === 0;
+      ffSpr(name, e.x, e.y + 3, (e.face || -1) < 0, flash ? 0.45 : a);
+      break;
+    }
+  }
+}
+
+function ffDrawPlayer() {
+  const p = ff.p;
+  if (p.invuln > 0 && ff.state === 'play' && Math.floor(p.invuln * 16) % 2 === 0) return;
+  let name;
+  if (p.attackT > 0) {
+    name = `attack${Math.min(3, Math.floor(((FF.attackTime - p.attackT) / FF.attackTime) * 4))}`;
+  } else if (!p.onGround) {
+    name = p.vy < 0 ? `jump${Math.min(3, 1 + Math.floor(p.anim * 8) % 3)}` : `fall${Math.floor(p.anim * 8) % 5}`;
+  } else if (Math.abs(p.vx) > 15) {
+    name = `run${Math.floor(p.dist / 9) % 6}`;
+  } else {
+    name = `idle${Math.floor(p.anim * 5) % 5}`;
+  }
+  ffSpr(name, p.x, p.y + 1, p.face < 0);
+}
+
+function ffDrawHud() {
+  ffSpr('face0', 16, 24);
+  for (let i = 0; i < FF.hearts; i++) ffSpr(i < ff.hearts ? 'heart0' : 'heartEmpty0', 36 + i * 17, 22);
+  ffSpr('coin0', FF_W - 52, 22);
+  ffText(`× ${String(ff.coins).padStart(2, '0')}`, FF_W - 42, 15, 12, '#fff4c8', 'left');
+  ffText(`LEVEL ${ff.level}`, FF_W / 2, 14, 11, '#d8f0d0');
+  const golem = ff.enemies.find((e) => e.type === 'golem' && !e.dead);
+  if (golem && ff.p.x > golem.x0 - 40) {
+    const max = 3 + Math.floor(ff.level / 6);
+    fx.fillStyle = 'rgba(0,0,0,0.6)';
+    fx.fillRect(FF_W / 2 - 62, 26, 124, 9);
+    fx.fillStyle = '#c94a3a';
+    fx.fillRect(FF_W / 2 - 60, 28, (120 * golem.hp) / max, 5);
+    ffText('GOLEM', FF_W / 2, 42, 9, '#f2d0b0');
+  }
+}
+
+// ---- Full-screen view and TV mirror ------------------------------------------------
+function ffLayout() {
+  const top = 50;
+  const s = Math.min((viewW - 16) / FF_W, (viewH - top - 16) / FF_H);
+  const w = FF_W * s;
+  const h = FF_H * s;
+  return { x: (viewW - w) / 2, y: top + (viewH - top - h) / 2, w, h };
+}
+
+function ffCloseButton() {
+  return { x: viewW - 46, y: 8, w: 34, h: 34 };
+}
+
+function drawFFOverlay() {
+  if (!ff.active) return;
+  drawFF();
+  ctx.fillStyle = 'rgba(10, 8, 6, 0.9)';
+  ctx.fillRect(0, 0, viewW, viewH);
+  const L = ffLayout();
+  // TV bezel
+  ctx.fillStyle = '#0c0d10';
+  ctx.beginPath();
+  ctx.roundRect(L.x - 7, L.y - 7, L.w + 14, L.h + 14, 8);
+  ctx.fill();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(ffCanvas, L.x, L.y, L.w, L.h);
+  ctx.imageSmoothingEnabled = true;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.fillStyle = '#f3e6d2';
+  ctx.fillText('Forest Falls', viewW / 2, 16);
+  ctx.font = '500 11px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(243, 230, 210, 0.75)';
+  ctx.fillText(isTouch ? '◀ ▶ run · JUMP jump · HIT attack' : '←/→ run · Space/↑ jump · E/X attack · ↓ drop · Esc quit', viewW / 2 - 20, 34, viewW - 110);
+  const b = ffCloseButton();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.beginPath();
+  ctx.roundRect(b.x, b.y, b.w, b.h, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#f3e6d2';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(b.x + 11, b.y + 11);
+  ctx.lineTo(b.x + b.w - 11, b.y + b.h - 11);
+  ctx.moveTo(b.x + b.w - 11, b.y + 11);
+  ctx.lineTo(b.x + 11, b.y + b.h - 11);
+  ctx.stroke();
+}
+
+function ffPointerDown(e) {
+  const r = canvas.getBoundingClientRect();
+  const sx = e.clientX - r.left;
+  const sy = e.clientY - r.top;
+  const b = ffCloseButton();
+  if (sx >= b.x && sx <= b.x + b.w && sy >= b.y && sy <= b.y + b.h) {
+    ffClose();
+    return;
+  }
+  // Tapping the game screen on the title or game-over screen starts it
+  if (ff.state === 'title' || ff.state === 'over') ffPressJump();
 }
 
 // ---- Reading minigame ----------------------------------------------------------
@@ -1460,11 +2279,17 @@ function drawWalkBanner() {
 function update(dt) {
   updateFade(dt);
   updateWalk(dt);
-  updateTv(dt);
   updateCamera(dt);
   if (fade.door) {
     player.walkTime = 0; // hold still while the screen fades
     updateActionButton();
+    return;
+  }
+  if (ff.active) {
+    updateFF(dt);
+    updateActionButton();
+    updatePartner(dt);
+    updateDog(dt);
     return;
   }
   if (dialogue.active) {
@@ -1971,62 +2796,12 @@ function drawHud() {
   const sx = toScreenX(anchor.x);
   const sy = toScreenY(anchor.y - headTop);
 
-  if (player.seat && isGaming()) {
-    const w = 96;
-    const h = 12;
-    const bx = sx - w / 2;
-    const by = sy - 22;
-    // Chapter label
-    ctx.font = '600 11px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
-    const gaming = isGaming();
-    const label = gaming ? `Level ${reading.levels + 1}` : `Chapter ${reading.chapters + 1}`;
-    pill(label, sx, by - 12, 'rgba(28, 25, 21, 0.75)', '#efe6d8');
-    // Bar
-    ctx.fillStyle = 'rgba(28, 25, 21, 0.8)';
-    ctx.beginPath();
-    ctx.roundRect(bx - 2, by - 2, w + 4, h + 4, 8);
-    ctx.fill();
-    ctx.fillStyle = '#3a332b';
-    ctx.beginPath();
-    ctx.roundRect(bx, by, w, h, 6);
-    ctx.fill();
-    if (reading.progress > 0) {
-      const g = ctx.createLinearGradient(bx, 0, bx + w, 0);
-      g.addColorStop(0, gaming ? '#4fb06a' : '#e6a75c');
-      g.addColorStop(1, gaming ? '#a6e36b' : '#f4d27a');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.roundRect(bx, by, Math.max(h, w * reading.progress), h, 6);
-      ctx.fill();
-    }
-
-    if (reading.popTime > 0) {
-      const t = 1 - reading.popTime / CHAPTER_POP_TIME; // 0 -> 1
-      const pop = t < 0.15 ? 0.6 + (t / 0.15) * 0.55 : t < 0.25 ? 1.15 - ((t - 0.15) / 0.1) * 0.15 : 1;
-      const alpha = t > 0.75 ? 1 - (t - 0.75) / 0.25 : 1;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(sx, by - 40 - t * 14);
-      ctx.scale(pop, pop);
-      ctx.font = '800 18px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = 'rgba(28, 25, 21, 0.9)';
-      const done = gaming ? 'Level Complete' : 'Chapter Complete';
-      ctx.strokeText(done, 0, 0);
-      ctx.fillStyle = gaming ? '#a6e36b' : '#f4d27a';
-      ctx.fillText(done, 0, 0);
-      ctx.restore();
-    } else if (reading.progress === 0) {
-      ctx.font = '500 11px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
-      const hint = isTouch ? `Tap ${gaming ? 'PLAY' : 'READ'} fast · arrows to get up` : 'Mash E or Space · arrows to get up';
-      pill(hint, sx, by + h + 16, 'rgba(28, 25, 21, 0.75)', '#efe6d8');
-    }
-  } else if (nearestDoor() && !fade.door) {
+  if (nearestDoor() && !fade.door) {
     const door = nearestDoor();
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
     const text = isTouch ? `Tap ${door.label} to ${door.prompt}` : `Press E to ${door.prompt}`;
     pill(text, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
-  } else if (nearestSeat()) {
+  } else if (!player.seat && nearestSeat()) {
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
     const what = gamesHere() ? 'play video games' : 'read';
     pill(isTouch ? `Tap SIT to ${what}` : `Press E to sit and ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
@@ -2039,6 +2814,7 @@ function drawHud() {
   }
   drawWalkBanner();
   drawBookOverlay();
+  drawFFOverlay();
   drawDialogue();
   if (fade.door) {
     const k = fade.t < FADE_TIME ? fade.t / FADE_TIME : 2 - fade.t / FADE_TIME;
