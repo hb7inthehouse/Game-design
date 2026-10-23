@@ -3640,15 +3640,24 @@ function drawSideWalk(ch, actor) {
   const footY = (a) => S.thigh * Math.cos(a.hip) + S.shin * Math.cos(a.hip + a.knee);
   const drop = S.thigh + S.shin - Math.max(footY(near), footY(far));
   ctx.translate(-S.ax, -S.ay + drop);
+  // Upper body leans into the walk, pivoting at the hips.
+  const lean = () => {
+    ctx.translate(S.hip.x, S.hip.y);
+    ctx.rotate(-(run ? GAIT.runLean : GAIT.lean) - Math.abs(Math.sin(phase)) * 0.015);
+    ctx.translate(-S.hip.x, -S.hip.y);
+  };
+  // Arms swing opposite their legs: the near arm goes back as the near leg steps forward.
+  const armSwing = (run ? GAIT.runArm : GAIT.arm) * Math.sin(phase);
+  // The far arm is on the other side of the body, so it goes behind the legs
+  // too; drawn after them, its hand showed through the thighs.
+  ctx.save();
+  lean();
+  drawSideArm(ch, SIDE_LAYERS.armFar, -armSwing);
+  ctx.restore();
   drawSideLeg(ch, SIDE_LAYERS.thighFar, SIDE_LAYERS.shinFar, far.hip, far.knee);
   drawSideLeg(ch, SIDE_LAYERS.thigh, SIDE_LAYERS.shin, near.hip, near.knee);
   ctx.save();
-  ctx.translate(S.hip.x, S.hip.y);
-  ctx.rotate(-(run ? GAIT.runLean : GAIT.lean) - Math.abs(Math.sin(phase)) * 0.015);
-  ctx.translate(-S.hip.x, -S.hip.y);
-  // Arms swing opposite their legs: the near arm goes back as the near leg steps forward.
-  const armSwing = (run ? GAIT.runArm : GAIT.arm) * Math.sin(phase);
-  drawSideArm(ch, SIDE_LAYERS.armFar, -armSwing);
+  lean();
   sideLayer(ch, SIDE_LAYERS.upper);
   drawSideArm(ch, SIDE_LAYERS.arm, armSwing);
   ctx.restore();
