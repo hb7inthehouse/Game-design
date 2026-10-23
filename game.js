@@ -400,7 +400,7 @@ function isFree(x, y, ignorePartner = false) {
   // Edges of her footprint all have to be on the floor
   const onFloor = (px, py) => room.floor.some((a) => px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h);
   if (![[x, y], [x - r, y], [x + r, y], [x, y - r], [x, y + r]].every(([px, py]) => onFloor(px, py))) return false;
-  if (!ignorePartner && partner.room === room.id && circleHitsRect(x, y, r, partnerBox())) return false;
+  if (!ignorePartner && !together.mode && partner.room === room.id && circleHitsRect(x, y, r, partnerBox())) return false;
   if (room.id === 'yard' && walk.phase !== 'clean' && x - r < 110) return false;
   return !room.obstacles.some((o) => circleHitsRect(x, y, r, o));
 }
@@ -1968,7 +1968,7 @@ const TALK_TREE = {
   hug: {
     lines: [['you', ['Aww. Always.', 'Hug time!', 'Get in here.']]],
     kiss: {
-      pose: ['hug', 'hugSide', 'hugBack'],
+      pose: ['hug', 'hugSide', 'hugBack', 'cuddleStand'],
       lines: [['you', 'Mm. You give the best hugs.'], ['me', "I've had practice."], ['you', 'On who?!'], ['me', `${DOG}.`]],
       then: 'menu',
     },
@@ -2320,24 +2320,25 @@ const COUPLE = {
   foreheadKiss: [286, 236, 138, 235],
   sideBySide: [426, 236, 156, 224],
   holdHands: [584, 236, 157, 223],
-  cuddleSit: [743, 236, 208, 161],
-  selfie: [953, 236, 163, 176],
-  piggyback: [1118, 236, 156, 196],
-  lean: [1276, 236, 207, 164],
-  walk0: [0, 473, 163, 181],
-  walk1: [165, 473, 162, 184],
-  walk2: [329, 473, 167, 185],
-  walk3: [498, 473, 147, 185],
-  walk4: [647, 473, 160, 184],
-  walk5: [809, 473, 155, 185],
-  walk6: [966, 473, 165, 185],
-  walk7: [1133, 473, 167, 185],
-  sitBack: [1302, 473, 169, 138],
-  talk: [0, 660, 178, 206],
+  cuddleSit: [743, 236, 137, 171],
+  selfie: [882, 236, 121, 225],
+  piggyback: [1005, 236, 108, 240],
+  lean: [1115, 236, 140, 170],
+  walk0: [1257, 236, 163, 181],
+  walk1: [1422, 236, 162, 184],
+  walk2: [0, 478, 167, 185],
+  walk3: [169, 478, 147, 185],
+  walk4: [318, 478, 160, 184],
+  walk5: [480, 478, 155, 185],
+  walk6: [637, 478, 165, 185],
+  walk7: [804, 478, 167, 185],
+  sitBack: [973, 478, 169, 138],
+  cuddleStand: [1144, 478, 99, 237],
+  talk: [1245, 478, 136, 219],
+  wave: [1383, 478, 129, 219],
 };
 const COUPLE_K = 0.82; // sheet px to map px, so they match the single sprites
-const COUPLE_SIZE = { talk: 1.06 }; // drawn a touch smaller on its sheet
-const COUPLE_WALK = 8; // walk frames per stride cycle
+const COUPLE_SIZE = {}; // per-frame size tweaks, if a pose comes out too big or small
 
 // Walking hand in hand ('hands') or with her on his back ('piggy'): you steer
 // the two of them; E lets go.
@@ -2395,13 +2396,8 @@ function endTogether() {
 
 function togetherFrame() {
   const moving = player.walkTime > 0;
-  if (moving && player.moveDx !== 0) together.left = player.moveDx < 0;
   const bob = moving ? Math.abs(Math.sin(player.gait * Math.PI * 2)) * 4 : 0;
   if (together.mode === 'piggy') return { name: 'piggyback', mirror: together.left, lift: bob };
-  if (moving) {
-    if (player.moveDx !== 0) return { name: 'walk' + (Math.floor(player.gait * COUPLE_WALK) % COUPLE_WALK), mirror: player.moveDx < 0 };
-    return { name: player.moveDy < 0 ? 'back' : 'front', lift: bob };
-  }
   // The sheet's side views don't agree on which way they face, so turned
   // three-quarter frames (mirrored for the left) stand in for them.
   const i = ((Math.round(player.facing / (Math.PI / 4)) % 8) + 8) % 8;
@@ -2411,9 +2407,66 @@ function togetherFrame() {
   ][i];
 }
 
+// ---- Walking hand in hand ----
+// Each of them walks with their own walk cycle, in step, holding hands: going
+// sideways he's half a step behind her (like the walk-together art) with his
+// near hand reaching forward and hers reaching back to meet it; going up or
+// down they're side by side, him on the left.
+const HAND_GAP = 24; // map px from the middle of the pair to each of them
+const HOLD_ARM = 0.5; // radians the holding arms reach toward each other
+const HAND_Y = 68; // map px above the floor where their hands meet (facing us or away)
+
+function handsWalking() {
+  return together.mode === 'hands' && player.walkTime > 0;
+}
+
+function drawHandsWalk() {
+  const s = room.scale;
+  const sideways = player.moveDx !== 0;
+  const dir = sideways ? Math.sign(player.moveDx) : 1;
+  const walker = (who, dx, holdArm) => ({
+    who,
+    x: player.x + dx * s,
+    y: player.y + (who === 'him' ? -1 : 1), // keeps a steady draw order
+    actor: { gait: player.gait, walkTime: player.walkTime, running: player.running, moveDx: player.moveDx, moveDy: player.moveDy, holdArm },
+    pose: sideways ? { name: 'right', mirror: dir < 0, side: true } : { name: player.moveDy < 0 ? 'back' : 'front', stepping: true },
+  });
+  const pair = sideways
+    ? [walker('him', -dir * HAND_GAP, -HOLD_ARM), walker('her', dir * HAND_GAP, HOLD_ARM)]
+    : [walker('him', -HAND_GAP - 4, undefined), walker('her', HAND_GAP + 4, undefined)];
+  pair.sort((a, b) => a.y - b.y);
+  for (const w of pair) drawCharacter(CHARS[w.who], w.pose, w.x, w.y, w.actor);
+  // Sideways their reaching hands already meet; facing us or away they hang
+  // at their sides, so draw the joined hands in the gap between them.
+  if (sideways) return;
+  const hx = player.x;
+  const hy = player.y - HAND_Y * s;
+  ctx.save();
+  ctx.fillStyle = '#e9a67c';
+  ctx.strokeStyle = '#3b1f14';
+  ctx.lineWidth = 1.4 * s;
+  for (const ox of [-2.2, 2.2]) {
+    ctx.beginPath();
+    ctx.ellipse(hx + ox * s, hy, 4.2 * s, 3.6 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#e9a67c';
+  ctx.fillRect(hx - 2.4 * s, hy - 2.6 * s, 4.8 * s, 5.2 * s);
+  ctx.restore();
+}
+
 // The pair to draw instead of the two of them, if any.
 function coupleNow() {
-  if (together.mode) return { ...togetherFrame(), x: player.x, y: player.y };
+  if (together.mode && !handsWalking()) return { ...togetherFrame(), x: player.x, y: player.y };
+  if (selfie.t > 0 && !player.seat && partner.room === room.id) {
+    // Posing for the photo
+    return { name: 'selfie', x: (player.x + partner.x) / 2, y: Math.max(player.y, partner.y), mirror: !hisSideLeft() };
+  }
+  if (player.wave > 0 && partner.wave > 0 && !player.seat && !partner.seat && partner.room === room.id && nearPartner()) {
+    // Both waving hello at once
+    return { name: 'wave', x: (player.x + partner.x) / 2, y: Math.max(player.y, partner.y), mirror: !hisSideLeft() };
+  }
   if (cuddle.active && player.seat && partner.seat) {
     const x = (player.seat.x + partner.seat.x) / 2;
     if (player.seat.view === 'back') return { name: 'sitBack', x, y: player.seat.y + 8, shadow: false };
@@ -2560,8 +2613,10 @@ function drawSelfie() {
     ctx.fillStyle = '#6b5a48';
     ctx.fillRect(px, py, size, size);
   }
-  const [sx, sy, w, h] = COUPLE.selfie;
-  const k = (size * 0.92) / Math.max(w, h);
+  // Waist up, like a real selfie
+  const [sx, sy, w, full] = COUPLE.selfie;
+  const h = Math.round(full * 0.62);
+  const k = (size * 0.95) / Math.max(w, h);
   ctx.drawImage(coupleImg, sx, sy, w, h, -w * k / 2, py + size - h * k, w * k, h * k);
   ctx.restore();
   ctx.fillStyle = '#5b4a3a';
@@ -3197,6 +3252,11 @@ function update(dt) {
   updatePartner(dt);
   updateDog(dt);
   updateKiss(dt);
+  if (together.mode) {
+    partner.x = player.x;
+    partner.y = player.y;
+    if (player.walkTime > 0 && player.moveDx !== 0) together.left = player.moveDx < 0;
+  }
   updateCuddle(dt);
   updateSelfie(dt);
   updateYard(dt);
@@ -3659,7 +3719,7 @@ function drawSideWalk(ch, actor) {
   ctx.save();
   lean();
   sideLayer(ch, SIDE_LAYERS.upper);
-  drawSideArm(ch, SIDE_LAYERS.arm, armSwing);
+  drawSideArm(ch, SIDE_LAYERS.arm, actor.holdArm ?? armSwing); // holdArm: holding hands
   ctx.restore();
 }
 // Height of a pose above its anchor, in map px (for the HUD).
@@ -4146,6 +4206,15 @@ function drawKissHud() {
 
 // Draw everyone back to front so whoever is lower on screen is in front.
 function drawActors() {
+  if (handsWalking()) {
+    const both = [
+      { y: player.y, draw: drawHandsWalk },
+      { y: dog.hop ? Math.max(dog.hop.from.y, dog.hop.to.y) : dog.y, draw: drawDog },
+    ];
+    both.sort((a, b) => a.y - b.y);
+    for (const a of both) a.draw();
+    return;
+  }
   const pair = coupleNow();
   if (pair) {
     const both = [
