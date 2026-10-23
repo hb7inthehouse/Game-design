@@ -2328,11 +2328,10 @@ const COUPLE = {
   walk6: [966, 473, 165, 185],
   walk7: [1133, 473, 167, 185],
   sitBack: [1302, 473, 169, 138],
-  talkHer: [0, 660, 148, 225],
-  talkHim: [150, 660, 153, 225],
-  talkBoth: [305, 660, 182, 225],
+  talk: [0, 660, 178, 206],
 };
 const COUPLE_K = 0.82; // sheet px to map px, so they match the single sprites
+const COUPLE_SIZE = { talk: 1.06 }; // drawn a touch smaller on its sheet
 const COUPLE_WALK = 8; // walk frames per stride cycle
 
 // Walking hand in hand ('hands') or with her on his back ('piggy'): you steer
@@ -2429,14 +2428,12 @@ function chattingStanding() {
     Math.hypot(player.x - partner.x, player.y - partner.y) < PARTNER_RANGE * 1.5 * room.scale;
 }
 
-// Whoever's speaking gets the talking pose; while their line types out it
-// flips to the other chat frame every so often so they look animated.
+// The talk / chat pose, with a speech bubble over whoever's line is typing out.
 function talkFrame() {
   const line = dialogue.lines[dialogue.i];
   const herTalking = line?.who === 'her';
   const typing = line && !dialogue.menu && dialogue.shown < line.text.length;
-  const alt = typing && Math.floor(dialogue.blink / 0.45) % 2 === 1;
-  const name = alt ? 'talkBoth' : herTalking ? 'talkHer' : 'talkHim';
+  const name = 'talk';
   const mirror = !hisSideLeft();
   // In the art he's on the left: the bubble goes over whoever's talking
   const herSide = mirror ? -1 : 1;
@@ -2452,8 +2449,9 @@ function talkFrame() {
 // "..." speech bubble, dots bouncing in turn
 function drawTalkBubble(c, w, h) {
   const s = room.scale;
-  const bx = c.x + c.bubble * w * COUPLE_K * 0.27 * s;
-  const by = c.y - (h * COUPLE_K + 14) * s;
+  const k = COUPLE_K * (COUPLE_SIZE[c.name] ?? 1);
+  const bx = c.x + c.bubble * w * k * 0.27 * s;
+  const by = c.y - (h * k + 14) * s;
   const bw = 30 * s;
   const bh = 18 * s;
   ctx.save();
@@ -2492,7 +2490,8 @@ function drawCouple(c) {
     ctx.fill();
   }
   ctx.translate(0, -(c.lift ?? 0));
-  ctx.scale(c.mirror ? -COUPLE_K : COUPLE_K, COUPLE_K);
+  const k = COUPLE_K * (COUPLE_SIZE[c.name] ?? 1);
+  ctx.scale(c.mirror ? -k : k, k);
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(coupleImg, sx, sy, w, h, -w / 2, -h, w, h);
   ctx.restore();
