@@ -50,3 +50,13 @@ Press E at the front door (bottom of the living room) and choose where to go:
 **Walmart** is six connected parts of the store (`assets/store-*.jpg`): walk off an edge to move to the next part. You walk in hand in hand with a shopping list of five things (always a squeaky toy for Dude, plus four random items from 17 across the store). Things on the list sparkle on the shelves and show up on the mini map of the whole store (`assets/store-map.jpg`, top right), along with where you are. Press E (GRAB) next to one to put it in the cart. When you're done, pay at a register at the front (PAY): if anything's missing, the other one reminds you and you can keep shopping or pay anyway. You get a receipt with the total and your shopping time (your best time is saved), then walk out the front doors to go home, where Dude runs up to greet you. Store collisions are in `store-data.js`: every shelf, rack, register, display and wall is traced from the art as a box (or its outline, where a box would cover a walkway), while thin poles and sign posts are left walkable. Press H in the store to see the blocked areas. The item spots and registers live there too.
 
 All text in the game uses the Pixelify Sans pixel font, to match the art.
+
+
+## They remember things
+
+Chats react to what just happened and to your history together (`memory` and `OPENERS` in `game.js`, saved in the browser):
+
+- **Openers:** the first line of a chat brings up whatever you just did: finishing a chapter, beating a Forest Falls level, walking Dude, a Walmart trip (and whether you got Dude's toy), a cuddle, a selfie, or a kiss a moment ago. It knows whether you did it or they did.
+- **Choices that come and go:** "How's the book going?" (talking to Sidney, once she's read some), "How far are you in Forest Falls?" (talking to Hudson), "Want to go back to Walmart?" (right after a trip), "About that kiss I owe you..." (when you're behind on the staring-contest tab), and "I'm sorry about earlier." (after teasing).
+- **Memory:** counts of kisses, hugs, cuddles, walks, trips, selfies, compliments and teases ("Kiss number 10! Yes, I'm counting.", "Trip number 3!", "Again? We were JUST there.").
+- **Mood:** sweet things (compliments, kisses, hugs, cuddles, walks, trips, apologies) raise it, with a few hearts; teasing and "Bad Dude!" lower it. A happy partner greets you warmly, a low one is short with you, and after teasing they sulk until you apologize.

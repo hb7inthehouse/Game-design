@@ -460,7 +460,12 @@ function arriveThrough(door) {
   hearts.length = 0;
   kiss.progress = 0;
   if (room.id === 'yard') startWalk();
-  if (from === 'yard') endWalk();
+  if (from === 'yard') {
+    endWalk();
+    happened('walk');
+    remember('walks');
+    moodShift(2);
+  }
   if (together.mode) {
     // Through the door together
     partner.room = room.id;
@@ -972,6 +977,7 @@ function updateFF(dt) {
     if (ff.t > 3.4) {
       reading.levels = Math.max(reading.levels || 0, ff.level);
       saveCount('levelsCleared', reading.levels);
+      happened('level', { n: ff.level });
       ff.level += 1;
       ffStartLevel();
     }
@@ -1541,6 +1547,7 @@ function closeBook() {
   if (won) {
     reading.chapters += 1;
     saveChapters(reading.chapters);
+    happened('chapter', { n: reading.chapters });
     player.cheer = CHEER_TIME;
     exciteDog();
   }
@@ -1964,30 +1971,167 @@ const TALK_GRACE = 450; // ms after a chat ends when E is ignored
 //   event: 'cuddle' | 'walk'  go and do it
 // and optionally after(), run once its lines are done.
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
+
+// ---- Memory ----------------------------------------------------------------------
+// What they remember about each other, saved between visits: how many kisses,
+// hugs, cuddles, walks and Walmart trips there have been, the kisses you owe
+// from the staring contest, whether one of them is still sulking after being
+// teased, and a mood (0-100) that sweet things raise and teasing lowers. Mood
+// changes how they greet you. `recent` (not saved) is what just happened, so
+// the next chat can bring it up.
+const MEMORY_KEY = 'livingRoomMemory';
+const memory = Object.assign(
+  { mood: 60, kisses: 0, hugs: 0, cuddles: 0, walks: 0, trips: 0, selfies: 0, compliments: 0, teases: 0, owesKiss: 0, sulking: false },
+  (() => {
+    try {
+      return JSON.parse(localStorage.getItem(MEMORY_KEY)) || {};
+    } catch {
+      return {};
+    }
+  })(),
+);
+const recent = []; // { what, who, t, said, ...details }
+
+function saveMemory() {
+  try {
+    localStorage.setItem(MEMORY_KEY, JSON.stringify(memory));
+  } catch {}
+}
+
+function remember(key, n = 1) {
+  memory[key] = (memory[key] || 0) + n;
+  saveMemory();
+}
+
+// Sweet things raise the mood (a few hearts float up), teasing lowers it.
+function moodShift(n) {
+  memory.mood = Math.max(0, Math.min(100, memory.mood + n));
+  saveMemory();
+  if (n > 0 && partner.room === room.id) {
+    for (let i = 0; i < 3; i++) addHeart(partner.x + (i - 1) * 12, partner.y - 170 * room.scale, false);
+  }
+}
+
+// Something just happened that's worth mentioning next time you talk.
+function happened(what, details = {}) {
+  recent.push({ what, who: player.who, t: performance.now() / 1000, said: false, ...details });
+  if (recent.length > 12) recent.shift();
+}
+
+function recentEvent(what, within) {
+  const now = performance.now() / 1000;
+  return [...recent].reverse().find((e) => e.what === what && now - e.t < within) ?? null;
+}
+
+// The newest thing that hasn't come up yet (kisses only count for a minute or two).
+function freshEvent() {
+  const now = performance.now() / 1000;
+  return [...recent].reverse().find((e) => !e.said && OPENERS[e.what] && now - e.t < (e.what === 'kiss' ? 90 : 300)) ?? null;
+}
+
+// How they open a chat about something that just happened. `mine` is true when
+// you did it (and they're reacting), false when they did.
+const OPENERS = {
+  chapter: (e, mine) => mine ? `Did you finish another chapter? That's ${e.n} now!` : `I just finished chapter ${e.n}! It's getting so good.`,
+  level: (e, mine) => mine ? `I heard the victory music. You beat level ${e.n}?` : `I finally beat level ${e.n}! Did you see?`,
+  walk: (e, mine) => mine ? `Thanks for walking ${DOG}. Look how happy he is.` : `${DOG} and I had the best walk.`,
+  trip: (e) => e.gotToy ? `${DOG} hasn't let go of that squeaky toy since we got home.` : `Fun trip! Even if we forgot ${DOG}'s toy...`,
+  cuddle: () => pick(['That was nice. I almost fell asleep on you.', 'Five more minutes of that later?']),
+  selfie: () => "I already made that picture my lock screen.",
+  kiss: () => pick(['Back for more already?', "Again? ...I'm not complaining."]),
+};
+
+function opener() {
+  const e = freshEvent();
+  if (e && OPENERS[e.what]) {
+    e.said = true;
+    return OPENERS[e.what](e, e.who === player.who);
+  }
+  if (memory.sulking) return pick(['...Oh. Hi.', `Hmph. Hi, ${myName()}.`, "I'm still a little mad at you, you know."]);
+  if (memory.mood >= 75) return pick([`Hiii, ${myName()}!`, "There's my favorite person.", "Oh good, it's you. Hi!"]);
+  if (memory.mood < 35) return pick(['Hey.', 'Oh. Hi.', 'Mm? What is it?']);
+  return pick(['Hey, you.', `Oh, hi ${myName()}! What's up?`, 'There you are.', `Hiii, ${myName()}. Need something?`]);
+}
 const MAIN_CHOICES = [
   { label: 'Kiss', to: 'kiss', say: ['Come here, you.', "C'mere for a sec.", 'I owe you a kiss.'] },
   { label: 'Hug', to: 'hug', say: ['Hug?', "C'mere. Hug.", 'I need a hug.'] },
+  { label: 'About that kiss I owe you...', to: 'pay_tab', when: () => memory.owesKiss > 0 },
+  { label: "I'm sorry about earlier.", to: 'sorry', when: () => memory.sulking },
   { label: "How's your day going?", to: 'day' },
+  { label: "How's the book going?", to: 'ask_book', when: () => partner.who === 'her' && reading.chapters > 0 },
+  { label: 'How far are you in Forest Falls?', to: 'ask_game', when: () => partner.who === 'him' && reading.levels > 0 },
   { label: 'What should we do?', to: 'plans' },
+  { label: 'Want to go back to Walmart?', to: 'door_store', when: () => !!recentEvent('trip', 900) },
   { label: 'You look really cute today.', to: 'compliment' },
   { label: `How's ${DOG} doing?`, to: 'dog' },
   { label: 'See you in a bit.', to: 'bye' },
 ];
 const TALK_TREE = {
-  hello: {
-    lines: [['you', () => pick(['Hey, you.', `Oh, hi ${myName()}! What's up?`, 'There you are.', `Hiii, ${myName()}. Need something?`])]],
-    choices: MAIN_CHOICES,
-  },
+  hello: { lines: [['you', opener]], choices: MAIN_CHOICES },
   menu: { lines: [['you', () => pick([`Anything else, ${myName()}?`, 'What else is on your mind?', 'Mm-hm?'])]], choices: MAIN_CHOICES },
-  kiss: { lines: [['you', ['Oh? Okay...', 'Mwah!', 'Finally.']]], kiss: true },
+  kiss: {
+    lines: [['you', () => {
+      const n = memory.kisses + 1;
+      if (n % 10 === 0) return `Kiss number ${n}! Yes, I'm counting.`;
+      if (memory.sulking) return "...Fine. But I'm still a little mad.";
+      return pick(['Oh? Okay...', 'Mwah!', 'Finally.']);
+    }]],
+    kiss: true,
+  },
   hug: {
-    lines: [['you', ['Aww. Always.', 'Hug time!', 'Get in here.']]],
+    lines: [['you', () => (memory.hugs + 1) % 10 === 0 ? `Hug number ${memory.hugs + 1}. Get in here.` : pick(['Aww. Always.', 'Hug time!', 'Get in here.'])]],
     kiss: {
       pose: ['hug', 'hugSide', 'hugBack', 'cuddleStand'],
       lines: [['you', 'Mm. You give the best hugs.'], ['me', "I've had practice."], ['you', 'On who?!'], ['me', `${DOG}.`]],
       then: 'menu',
     },
   },
+  pay_tab: {
+    lines: [['you', () => `Mm-hm. You owe me ${memory.owesKiss}. Pay up.`]],
+    after: () => remember('owesKiss', -1),
+    kiss: { lines: [['you', () => memory.owesKiss > 0 ? `That's one. ${memory.owesKiss} to go.` : 'Tab cleared. ...For now.']], then: 'menu' },
+  },
+  sorry: {
+    lines: [['you', () => memory.mood < 35 ? "...Okay. I forgive you. Mostly." : "Aw. Okay, you're forgiven."]],
+    after: () => {
+      memory.sulking = false;
+      moodShift(6);
+    },
+    choices: [
+      { label: 'Hug it out?', to: 'hug' },
+      { label: 'Thank you.', to: 'menu' },
+    ],
+  },
+  ask_book: {
+    lines: [['you', () => recentEvent('chapter', 300)
+      ? `I just finished chapter ${reading.chapters}! I can't put it down.`
+      : `I'm ${reading.chapters} chapter${reading.chapters === 1 ? '' : 's'} in. It's so good.`]],
+    choices: [
+      { label: 'Tell me what happens!', to: 'book_spoil' },
+      { label: 'Read me some later?', to: 'book_read' },
+    ],
+  },
+  book_spoil: { lines: [['you', 'No spoilers! ...Okay, fine. Someone kissed someone.'], ['me', 'Riveting.']], to: 'menu' },
+  book_read: { lines: [['you', 'Only if you do the voices.']], after: () => moodShift(2), to: 'menu' },
+  ask_game: {
+    lines: [['you', () => `Level ${reading.levels + 1}. ${reading.levels >= 3 ? 'The golem keeps squishing me.' : 'The bats are the worst.'}`]],
+    choices: [
+      { label: "You'll get it.", to: 'game_luck' },
+      { label: 'Can I watch?', to: 'game_watch' },
+    ],
+  },
+  game_luck: {
+    lines: [['you', 'Thanks. ...Kiss for luck?']],
+    choices: [
+      { label: 'For luck.', to: 'kiss_luck' },
+      { label: 'Ha. After you win.', to: 'menu' },
+    ],
+  },
+  kiss_luck: {
+    lines: [['you', 'Okay, now I HAVE to win.']],
+    kiss: { pose: 'kissSide', lines: [['you', 'Lucky kiss acquired.'], ['me', 'Go get that golem.']], then: 'menu' },
+  },
+  game_watch: { lines: [['you', "Only if you don't backseat. ...You're going to backseat."]], to: 'menu' },
   bye: { lines: [['you', () => pick([`Don't be long, ${myName()}!`, 'Okay, bye bye.', "I'll be here."])]] },
 
   // The front door
@@ -2001,7 +2145,9 @@ const TALK_TREE = {
   },
   door_stay: {},
   door_walk: {
-    lines: [['you', ["Look at him, he's already spinning in circles.", 'He heard the W word. No going back now.']]],
+    lines: [['you', () => recentEvent('walk', 600)
+      ? "Again? He's going to be the fittest dog in the neighborhood."
+      : pick(["Look at him, he's already spinning in circles.", 'He heard the W word. No going back now.'])]],
     after: () => exciteDog(),
     choices: [
       { label: `Come on, ${DOG}!`, to: 'walk_go' },
@@ -2012,7 +2158,11 @@ const TALK_TREE = {
   door_walk_partner: { lines: [['you', "I'll keep the couch warm. Have fun, you two!"]], event: 'walk' },
   door_walk_no: { lines: [['you', "Aw, look at his little face. You can't do that to him."]] },
   door_store: {
-    lines: [['you', ["Ooh, yes. We're out of like... everything.", 'Walmart? Say less. Let me grab my shoes.']]],
+    lines: [['you', () => {
+      if (recentEvent('trip', 900)) return 'Again? We were JUST there. ...Okay, fine, I want snacks.';
+      if (memory.trips > 0) return `Trip number ${memory.trips + 1}! Let me grab my shoes.`;
+      return pick(["Ooh, yes. We're out of like... everything.", 'Walmart? Say less. Let me grab my shoes.']);
+    }]],
     choices: [
       { label: "Let's make a list.", to: 'store_list' },
       { label: 'Just to look around?', to: 'store_browse' },
@@ -2180,6 +2330,7 @@ const TALK_TREE = {
   },
   stare_again: {
     lines: [['you', '...'], ['me', '...'], ['you', 'Wow. You blinked AGAIN. That is two kisses.']],
+    after: () => remember('owesKiss'), // one now, one on the tab
     kiss: { lines: [['you', "That's two. I'm keeping a tab."], ['me', 'Put it on my account.'], ['you', "Oh, I will. It's getting very long."]], then: 'menu' },
   },
   plans_see: {
@@ -2192,6 +2343,10 @@ const TALK_TREE = {
 
   // You look really cute today.
   compliment: {
+    after: () => {
+      remember('compliments');
+      moodShift(2);
+    },
     lines: [['you', () => pick(['Stoppp. ...Okay, keep going.', 'Who, me?', `You're just saying that, ${myName()}.`])]],
     choices: [
       { label: 'I mean it.', to: 'comp_mean' },
@@ -2218,6 +2373,11 @@ const TALK_TREE = {
   comp_later: { lines: [['you', 'Suspense is overrated. ...But fine.']], to: 'menu' },
   comp_tease: {
     lines: [['you', `Wow. Rude. I'm telling ${DOG}.`]],
+    after: () => {
+      remember('teases');
+      memory.sulking = true;
+      moodShift(-8);
+    },
     choices: [
       { label: 'Wait, I was kidding!', to: 'comp_sorry' },
       { label: "He's on my side.", to: 'comp_side' },
@@ -2225,6 +2385,10 @@ const TALK_TREE = {
   },
   comp_sorry: {
     lines: [['you', 'Hmm. I only accept apologies in cuddles.']],
+    after: () => {
+      memory.sulking = false;
+      saveMemory();
+    },
     choices: [
       { label: 'Deal.', to: 'cuddle_go' },
       { label: 'How about a kiss?', to: 'kiss_sorry' },
@@ -2247,7 +2411,10 @@ const TALK_TREE = {
   },
   dog_bad: {
     lines: [['you', "You don't mean that. Look at that face."]],
-    after: () => exciteDog(),
+    after: () => {
+      exciteDog();
+      moodShift(-2);
+    },
     choices: [
       { label: `...Okay, good boy, ${DOG}.`, to: 'dog_good' },
       { label: "Fine. He's forgiven.", to: 'dog_forgive' },
@@ -2320,7 +2487,7 @@ function playTalkNode(id, first = []) {
       dialogue.active = true;
       dialogue.i = Math.max(0, dialogue.lines.length - 1);
       dialogue.shown = dialogue.lines[dialogue.i]?.text.length ?? 0;
-      dialogue.menu = { options: node.choices, sel: 0 };
+      dialogue.menu = { options: node.choices.filter((c) => !c.when || c.when()), sel: 0 };
     } else if (node.to) {
       talkThen(node.to);
     } else if (node.kiss) {
@@ -2631,6 +2798,8 @@ function drawTogetherHud() {
 // Selfie: a camera flash, then the photo pops up like a polaroid.
 function startSelfie(onDone) {
   selfie.t = 0.0001;
+  remember('selfies');
+  happened('selfie');
   exciteDog();
   onDone?.();
 }
@@ -2728,6 +2897,8 @@ function startCuddle() {
       const mine = player.who === 'her' ? spots.left : spots.right;
       const theirs = player.who === 'her' ? spots.right : spots.left;
       cuddle.active = true;
+      remember('cuddles');
+      moodShift(3);
       cuddle.heartIn = 1.2;
       cuddle.t = 0;
       player.seat = { ...mine, dog: spots.dog };
@@ -2758,6 +2929,7 @@ function startCuddle() {
 
 function endCuddle() {
   cuddle.active = false;
+  happened('cuddle');
   partnerStandUp();
   partner.stay = 5; // stays put a moment before wandering off
   partner.greeted = true;
@@ -3463,6 +3635,9 @@ function enterStore() {
 
 function goHome() {
   const gotToy = shop.list.some((i) => i.id === 'toy' && i.got);
+  remember('trips');
+  memory.mood = Math.min(100, memory.mood + 3);
+  happened('trip', { gotToy });
   shop.active = false;
   shop.receipt = null;
   together.mode = null;
@@ -4728,6 +4903,10 @@ function addHeart(x, y, big) {
 // `pose` is the couple art to show: a kiss (default), a hug, a forehead kiss...
 function giveKiss(pose) {
   kiss.pose = pose ?? pick(['kiss', 'kissSide']);
+  const hug = kiss.pose.startsWith('hug') || kiss.pose === 'cuddleStand';
+  remember(hug ? 'hugs' : 'kisses');
+  happened(hug ? 'hug' : 'kiss');
+  memory.mood = Math.min(100, memory.mood + 2); // no extra hearts: the kiss has plenty
   player.wave = 0;
   player.idleTime = 0;
   player.facing = Math.atan2(partner.y - player.y, partner.x - player.x);
