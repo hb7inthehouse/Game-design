@@ -2328,6 +2328,9 @@ const COUPLE = {
   walk6: [966, 473, 165, 185],
   walk7: [1133, 473, 167, 185],
   sitBack: [1302, 473, 169, 138],
+  talkHer: [0, 660, 148, 225],
+  talkHim: [150, 660, 153, 225],
+  talkBoth: [305, 660, 182, 225],
 };
 const COUPLE_K = 0.82; // sheet px to map px, so they match the single sprites
 const COUPLE_WALK = 8; // walk frames per stride cycle
@@ -2416,7 +2419,64 @@ function coupleNow() {
   if (kiss.celebrate > 0 && kiss.pose) {
     return { name: kiss.pose, x: (player.x + partner.x) / 2, y: Math.max(player.y, partner.y), mirror: !hisSideLeft() };
   }
+  if (chattingStanding()) return talkFrame();
   return null;
+}
+
+// Standing face to face having a chat (not on a seat, not mid-fade).
+function chattingStanding() {
+  return dialogue.active && !fade.door && partner.room === room.id && !player.seat && !partner.seat &&
+    Math.hypot(player.x - partner.x, player.y - partner.y) < PARTNER_RANGE * 1.5 * room.scale;
+}
+
+// Whoever's speaking gets the talking pose; while their line types out it
+// flips to the other chat frame every so often so they look animated.
+function talkFrame() {
+  const line = dialogue.lines[dialogue.i];
+  const herTalking = line?.who === 'her';
+  const typing = line && !dialogue.menu && dialogue.shown < line.text.length;
+  const alt = typing && Math.floor(dialogue.blink / 0.45) % 2 === 1;
+  const name = alt ? 'talkBoth' : herTalking ? 'talkHer' : 'talkHim';
+  const mirror = !hisSideLeft();
+  // In the art he's on the left: the bubble goes over whoever's talking
+  const herSide = mirror ? -1 : 1;
+  return {
+    name,
+    mirror,
+    x: (player.x + partner.x) / 2,
+    y: Math.max(player.y, partner.y),
+    bubble: typing ? (herTalking ? herSide : -herSide) : 0,
+  };
+}
+
+// "..." speech bubble, dots bouncing in turn
+function drawTalkBubble(c, w, h) {
+  const s = room.scale;
+  const bx = c.x + c.bubble * w * COUPLE_K * 0.27 * s;
+  const by = c.y - (h * COUPLE_K + 14) * s;
+  const bw = 30 * s;
+  const bh = 18 * s;
+  ctx.save();
+  ctx.fillStyle = '#fbf7ef';
+  ctx.strokeStyle = '#2a1f1a';
+  ctx.lineWidth = 2 * s;
+  ctx.beginPath();
+  ctx.roundRect(bx - bw / 2, by - bh, bw, bh, 8 * s);
+  ctx.moveTo(bx - 4 * s, by);
+  ctx.lineTo(bx - c.bubble * 6 * s, by + 7 * s);
+  ctx.lineTo(bx + 4 * s, by);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#fbf7ef';
+  ctx.fillRect(bx - 4 * s, by - 2 * s, 8 * s, 3 * s); // hide the seam over the tail
+  ctx.fillStyle = '#2a1f1a';
+  for (let i = 0; i < 3; i++) {
+    const hop = Math.max(0, Math.sin(dialogue.blink * 8 - i * 0.9)) * 2.5 * s;
+    ctx.beginPath();
+    ctx.arc(bx + (i - 1) * 7 * s, by - bh / 2 - hop, 2.2 * s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawCouple(c) {
@@ -2436,6 +2496,7 @@ function drawCouple(c) {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(coupleImg, sx, sy, w, h, -w / 2, -h, w, h);
   ctx.restore();
+  if (c.bubble) drawTalkBubble(c, w, h);
 }
 
 function drawTogetherHud() {
