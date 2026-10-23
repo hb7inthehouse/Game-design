@@ -419,7 +419,7 @@ function useDoor(door) {
 function arriveThrough(door) {
   const from = room.id;
   room = ROOMS[door.to];
-  const entry = room.doors.find((d) => d.to === from);
+  const entry = room.doors.find((d) => d.to === from) ?? room.doors[0]; // from the bedroom straight out to the yard
   player.x = entry.spawn.x;
   player.y = entry.spawn.y;
   player.facing = entry.spawn.facing;
@@ -443,7 +443,10 @@ function updateFade(dt) {
   if (!fade.door) return;
   const before = fade.t;
   fade.t += dt;
-  if (before < FADE_TIME && fade.t >= FADE_TIME) arriveThrough(fade.door);
+  if (before < FADE_TIME && fade.t >= FADE_TIME) {
+    if (fade.door.fn) fade.door.fn(); // not a door: something set up behind the fade
+    else arriveThrough(fade.door);
+  }
   if (fade.t >= FADE_TIME * 2) fade.door = null;
 }
 
@@ -454,7 +457,8 @@ function action() {
   }
   if (fade.door || book.active) return;
   if (player.seat) {
-    if (ff.active) ff.attackQueued = true; // HIT in Forest Falls
+    if (cuddle.active) cuddleKiss();
+    else if (ff.active) ff.attackQueued = true; // HIT in Forest Falls
     return;
   }
   if (canKiss()) {
@@ -489,7 +493,7 @@ function gamesHere() {
   return player.who === 'him' && room.id === 'apartment';
 }
 function isGaming() {
-  return !!player.seat && gamesHere();
+  return !!player.seat && gamesHere() && !cuddle.active;
 }
 
 function standUp(dx, dy) {
@@ -499,6 +503,7 @@ function standUp(dx, dy) {
   }
   const seat = player.seat;
   player.seat = null;
+  if (cuddle.active) endCuddle();
   player.x = seat.approach.x;
   player.y = seat.approach.y;
   player.facing = Math.atan2(dy, dx);
@@ -507,7 +512,7 @@ function standUp(dx, dy) {
 
 function updateActionButton() {
   let label = '';
-  if (player.seat) label = isGaming() ? 'HIT' : 'READ';
+  if (player.seat) label = cuddle.active ? 'KISS' : isGaming() ? 'HIT' : 'READ';
   else if (canKiss()) label = 'TALK';
   else if (nearPoop()) label = 'PICK UP';
   else if (nearBin()) label = 'TRASH';
@@ -1787,7 +1792,7 @@ function choosePartnerSpot() {
 
 function updatePartner(dt) {
   partner.wave = Math.max(0, partner.wave - dt);
-  if (partner.room !== room.id || room.id !== 'apartment') return;
+  if (partner.room !== room.id || room.id !== 'apartment' || cuddle.active) return;
   const near = Math.hypot(player.x - partner.x, player.y - partner.y) < PARTNER_GREET * room.scale && !player.seat;
   // Busy with you: kissing, celebrating or talking
   if (kiss.progress > 0 || kiss.celebrate > 0 || dialogue.active) {
@@ -1853,6 +1858,7 @@ function updatePartner(dt) {
 
 // Partner on the couch: just sitting, no book.
 function partnerSeatedPose(ch, seat) {
+  if (cuddle.active) return cuddlePose(ch, seat, player.seat);
   if (ch.name === 'him') {
     if (seat.view === 'back') return { name: 'back', waistUp: true };
     return { name: 'floorSit' };
@@ -1886,13 +1892,23 @@ const dialogue = { active: false, lines: [], i: 0, shown: 0, onDone: null, talk:
 // ---- Talking ----------------------------------------------------------------------
 // Walk up to the other person and press TALK. They say something, and a menu
 // of things to say pops up next to the text box: pick one with up/down (or tap
-// it) and press E / NEXT. Each choice plays a short exchange and either comes
-// back to the menu, ends the chat, or leads to a kiss.
+// it) and press E / NEXT. You say what you picked, they answer, and most
+// answers open another menu, so a chat can wander off in different directions.
+// Some end in a kiss (with its own lines afterwards), a cuddle on the couch, or
+// taking the dog out.
 // In lines, 'me' is whoever you're playing and 'you' is the other person.
 // Text can be one string, a list (one is picked at random), or a function.
+// A choice is { label, to, say? }: you say `say` (or the label), then node `to`
+// plays. A node has `lines` and then one of:
+//   choices: [...]            another menu
+//   to: 'id'                  straight on to another node
+//   kiss: true                the usual kiss (chat, then swap characters)
+//   kiss: { lines, then }     a kiss, these lines, then a node id / 'cuddle' / 'walk' (or swap if no `then`)
+//   event: 'cuddle' | 'walk'  go and do it
+// and optionally after(), run once its lines are done.
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const MAIN_CHOICES = [
-  { label: 'Kiss', to: 'kiss' },
+  { label: 'Kiss', to: 'kiss', say: ['Come here, you.', "C'mere for a sec.", 'I owe you a kiss.'] },
   { label: "How's your day going?", to: 'day' },
   { label: 'What should we do?', to: 'plans' },
   { label: 'You look really cute today.', to: 'compliment' },
@@ -1901,61 +1917,249 @@ const MAIN_CHOICES = [
 ];
 const TALK_TREE = {
   hello: {
-    lines: [['you', ['Hey, you.', 'Oh, hi! What\'s up?', 'There you are.', 'Hiii. Need something?']]],
+    lines: [['you', ['Hey, you.', "Oh, hi! What's up?", 'There you are.', 'Hiii. Need something?']]],
     choices: MAIN_CHOICES,
   },
-  menu: { lines: [['you', ['Anything else?', 'What else is on your mind?', 'Mm-hm?']]], choices: MAIN_CHOICES },
-  kiss: { lines: [['me', ['Come here, you.', 'C\'mere for a sec.', 'I owe you a kiss.']], ['you', ['Oh? Okay...', 'Mwah!', 'Finally.']]], action: 'kiss' },
+  menu: { lines: [['you', ['Anything else?', "What else is on your mind?", 'Mm-hm?']]], choices: MAIN_CHOICES },
+  kiss: { lines: [['you', ['Oh? Okay...', 'Mwah!', 'Finally.']]], kiss: true },
+  bye: { lines: [['you', ["Don't be long!", 'Okay, bye bye.', "I'll be here."]]] },
+
+  // Shared endings
+  cuddle_go: { lines: [['you', ["Yay. Come on, let's get comfy.", 'Best idea all day.', "Scoot in. I've got the good blanket."]]], event: 'cuddle' },
+  walk_go: { lines: [['you', ['He heard "walk." Look at that tail go.', 'Leash is by the door. Go go go!', "Okay buddy, let's go!"]]], event: 'walk', after: () => exciteDog() },
+
+  // How's your day going?
   day: {
-    lines: [['me', 'How\'s your day going?'], ['you', () => {
+    lines: [['you', () => {
       if (partner.who === 'her' && reading.chapters > 0) return `Really good! I've read ${reading.chapters} chapter${reading.chapters === 1 ? '' : 's'} of my book.`;
       if (partner.who === 'him' && reading.levels > 0) return `Pretty great. I made it to level ${reading.levels + 1} in Forest Falls.`;
-      return pick(['Slow, honestly. Better now that you\'re here.', 'Busy! But good.', 'It\'s been a cozy one.']);
+      return pick(["Slow, honestly. Better now that you're here.", 'Busy! But good.', "It's been a cozy one."]);
     }]],
     choices: [
-      { label: 'That\'s great!', to: 'day_great' },
-      { label: 'Want to do something together?', to: 'plans' },
+      { label: 'Tell me everything.', to: 'day_tell' },
+      { label: "Mine's been kind of long.", to: 'day_long' },
       { label: 'Never mind.', to: 'menu' },
     ],
   },
-  day_great: { lines: [['me', 'That\'s great!'], ['you', 'Thanks. I like that you always ask.']], to: 'menu' },
+  day_tell: {
+    lines: [['you', 'Honestly? The best part is right now.']],
+    choices: [
+      { label: 'Smooth.', to: 'day_smooth' },
+      { label: 'Same here.', to: 'day_same' },
+    ],
+  },
+  day_smooth: {
+    lines: [['you', 'I learned from the best.']],
+    choices: [
+      { label: 'Okay, that earns a kiss.', to: 'kiss_smooth' },
+      { label: 'Ha. Flattery noted.', to: 'menu' },
+    ],
+  },
+  kiss_smooth: {
+    lines: [['you', 'I was hoping you would say that.']],
+    kiss: { lines: [['you', 'Maybe I should be smooth more often.'], ['me', 'Please do.'], ['you', "Noted. Anything else, or are you just going to stand there smiling?"]], then: 'menu_smile' },
+  },
+  menu_smile: { lines: [['me', "I'm allowed to smile."]], choices: MAIN_CHOICES },
+  day_same: {
+    lines: [['you', "Then let's not waste it. Couch?"]],
+    choices: [
+      { label: 'Couch.', to: 'cuddle_go' },
+      { label: 'In a bit.', to: 'menu' },
+    ],
+  },
+  day_long: {
+    lines: [['you', 'Aw, c\'mere. What happened?']],
+    choices: [
+      { label: 'Just tired.', to: 'day_tired' },
+      { label: "Work stuff. Don't want to talk about it.", to: 'day_work' },
+      { label: "Nothing, it's fine.", to: 'day_okay' },
+    ],
+  },
+  day_tired: {
+    lines: [['you', "Then you're getting cuddles. Doctor's orders."]],
+    choices: [
+      { label: 'Yes please.', to: 'cuddle_go' },
+      { label: "I'm okay, really.", to: 'day_okay' },
+    ],
+  },
+  day_work: {
+    lines: [['you', 'Okay. Want a distraction instead?']],
+    choices: [
+      { label: 'A kiss would help.', to: 'kiss_better' },
+      { label: "Let's take the dog out.", to: 'walk_go' },
+      { label: 'Just sit with me a minute.', to: 'cuddle_go' },
+    ],
+  },
+  kiss_better: {
+    lines: [['you', 'Prescription filled.']],
+    kiss: { lines: [['you', 'Better?'], ['me', 'A little.'], ['you', 'Only a little? Okay, couch. Now. More treatment needed.']], then: 'cuddle' },
+  },
+  day_okay: { lines: [['you', "You sure? I'm right here if you want to talk."], ['me', 'I know. Thank you.']], to: 'menu' },
+
+  // What should we do?
   plans: {
-    lines: [['me', 'What should we do?'], ['you', 'Hmm... we could hang out on the couch, or take the pup for a walk. Your pick.']],
+    lines: [['you', "Hmm... couch and a movie? Or the pup's been eyeing the door."]],
     choices: [
       { label: 'Couch and cuddles.', to: 'plans_couch' },
-      { label: 'Let\'s take the dog out.', to: 'plans_walk' },
-      { label: 'Maybe later.', to: 'menu' },
+      { label: "Let's take the dog out.", to: 'plans_walk' },
+      { label: 'Surprise me.', to: 'plans_surprise' },
+      { label: 'Nothing. I just wanted to see you.', to: 'plans_see' },
     ],
   },
-  plans_couch: { lines: [['me', 'Couch and cuddles.'], ['you', 'Deal. But kiss first, that\'s the rule.']], choices: [{ label: 'Kiss', to: 'kiss' }, { label: 'Rules are rules...', to: 'kiss' }, { label: 'Ha. Later.', to: 'menu' }] },
-  plans_walk: {
-    lines: [['me', 'Let\'s take the dog out.'], ['you', 'Good idea. He\'s been giving us the eyes.']],
-    action: 'walk',
-  },
-  compliment: {
-    lines: [['me', 'You look really cute today.'], ['you', ['Stoppp. ...Okay, keep going.', 'Who, me?', 'You\'re just saying that.']]],
+  plans_couch: {
+    lines: [['you', "Deal. But kiss first. That's the rule."]],
     choices: [
-      { label: 'I mean it.', to: 'compliment_mean' },
-      { label: 'Just teasing.', to: 'compliment_tease' },
+      { label: 'Rules are rules.', to: 'kiss_rule' },
+      { label: 'Cuddles first, kiss later?', to: 'plans_haggle' },
+      { label: 'Ha. Maybe later.', to: 'menu' },
     ],
   },
-  compliment_mean: { lines: [['me', 'I mean it.'], ['you', '...Okay, now you HAVE to kiss me.']], choices: [{ label: 'Kiss', to: 'kiss' }, { label: 'Make me.', to: 'kiss' }, { label: 'Ha, later.', to: 'menu' }] },
-  compliment_tease: { lines: [['me', 'Just teasing.'], ['you', 'Wow. Rude. I\'m telling the dog.']], to: 'menu' },
+  kiss_rule: {
+    lines: [['you', 'Good. I like rules.']],
+    kiss: { lines: [['you', 'Okay, rule satisfied.'], ['me', 'Couch?'], ['you', "Couch. You're the big spoon."]], then: 'cuddle' },
+  },
+  plans_haggle: { lines: [['you', "Fine... but I'm collecting later. With interest."]], event: 'cuddle' },
+  plans_walk: {
+    lines: [['you', "Good call. He's been giving us the eyes all afternoon."]],
+    choices: [
+      { label: 'Come on, buddy!', to: 'walk_go' },
+      { label: 'Actually, five more minutes.', to: 'plans_wait' },
+    ],
+  },
+  plans_wait: { lines: [['you', "He's going to sit by the door and sigh at you. Loudly."]], to: 'menu', after: () => exciteDog() },
+  plans_surprise: {
+    lines: [['you', 'Okay. Staring contest. Loser owes the winner a kiss.']],
+    choices: [
+      { label: "You're on.", to: 'stare' },
+      { label: "That's a trap.", to: 'stare_trap' },
+    ],
+  },
+  stare_trap: {
+    lines: [['you', "It's only a trap if you lose."]],
+    choices: [
+      { label: "Fine. You're on.", to: 'stare' },
+      { label: 'Not falling for it.', to: 'menu' },
+    ],
+  },
+  stare: {
+    lines: [['you', '...'], ['me', '...'], ['you', '...Ha! You blinked! I win.'], ['me', 'I absolutely did not.'], ['you', 'Pay up.']],
+    choices: [
+      { label: 'Fine, fine.', to: 'kiss_stare' },
+      { label: 'Best two out of three.', to: 'stare_again' },
+    ],
+  },
+  kiss_stare: {
+    lines: [['you', 'Mm-hm. Come here, loser.']],
+    kiss: { lines: [['you', 'Worth losing for?'], ['me', 'Every single time.']], then: 'menu' },
+  },
+  stare_again: {
+    lines: [['you', '...'], ['me', '...'], ['you', 'Wow. You blinked AGAIN. That is two kisses.']],
+    kiss: { lines: [['you', "That's two. I'm keeping a tab."], ['me', 'Put it on my account.'], ['you', "Oh, I will. It's getting very long."]], then: 'menu' },
+  },
+  plans_see: {
+    lines: [['you', "...That's really sweet. Come sit with me?"]],
+    choices: [
+      { label: 'Yeah.', to: 'cuddle_go' },
+      { label: 'In a minute.', to: 'menu' },
+    ],
+  },
+
+  // You look really cute today.
+  compliment: {
+    lines: [['you', ['Stoppp. ...Okay, keep going.', 'Who, me?', "You're just saying that."]]],
+    choices: [
+      { label: 'I mean it.', to: 'comp_mean' },
+      { label: 'Just teasing.', to: 'comp_tease' },
+    ],
+  },
+  comp_mean: {
+    lines: [['you', '...Okay, now you HAVE to kiss me.']],
+    choices: [
+      { label: 'Happily.', to: 'kiss_comp' },
+      { label: 'Make me.', to: 'kiss_make' },
+      { label: 'Later. Building suspense.', to: 'comp_later' },
+    ],
+  },
+  kiss_comp: {
+    lines: [['you', 'Hehe.']],
+    kiss: { lines: [['you', "You're blushing."], ['me', "YOU'RE blushing."], ['you', "...Okay, we're both blushing."]], then: 'menu' },
+  },
+  kiss_make: {
+    lines: [['you', 'Oh, I will.']],
+    kiss: { lines: [['me', 'Okay. You made me.'], ['you', 'I always win.'], ['me', "I'm going to get you back, you know."], ['you', "Counting on it."]] },
+  },
+  comp_later: { lines: [['you', 'Suspense is overrated. ...But fine.']], to: 'menu' },
+  comp_tease: {
+    lines: [['you', "Wow. Rude. I'm telling the dog."]],
+    choices: [
+      { label: 'Wait, I was kidding!', to: 'comp_sorry' },
+      { label: "He's on my side.", to: 'comp_side' },
+    ],
+  },
+  comp_sorry: {
+    lines: [['you', 'Hmm. I only accept apologies in cuddles.']],
+    choices: [
+      { label: 'Deal.', to: 'cuddle_go' },
+      { label: 'How about a kiss?', to: 'kiss_sorry' },
+    ],
+  },
+  kiss_sorry: {
+    lines: [['you', "That's a start."]],
+    kiss: { lines: [['you', '...Okay. Apology accepted.'], ['me', 'And the cuddles?'], ['you', 'Those too. Come on.']], then: 'cuddle' },
+  },
+  comp_side: { lines: [['you', "He's right there. Let's ask him. ...See? He's wagging at ME."]], to: 'menu', after: () => exciteDog() },
+
+  // How's the pup doing?
   dog: {
-    lines: [['me', 'How\'s the pup doing?'], ['you', ['He stole one of my socks again.', 'He did the zoomies around the couch earlier.', 'Asleep on my side of the bed, obviously.']]],
+    lines: [['you', ['He stole one of my socks again.', 'He did the zoomies around the couch earlier.', 'Asleep on my side of the bed, obviously.']]],
     choices: [
       { label: 'Bad dog!', to: 'dog_bad' },
       { label: 'Good boy.', to: 'dog_good' },
+      { label: 'Does he need to go out?', to: 'dog_out' },
     ],
   },
-  dog_bad: { lines: [['me', 'Bad dog!'], ['you', 'You don\'t mean that. Look at that face.']], to: 'menu', after: () => exciteDog() },
-  dog_good: { lines: [['me', 'Good boy.'], ['you', 'He really is. Best boy.']], to: 'menu', after: () => exciteDog() },
-  bye: { lines: [['me', 'See you in a bit.'], ['you', ['Don\'t be long!', 'Okay, bye bye.', 'I\'ll be here.']]] },
+  dog_bad: {
+    lines: [['you', "You don't mean that. Look at that face."]],
+    after: () => exciteDog(),
+    choices: [
+      { label: '...Okay, good dog.', to: 'dog_good' },
+      { label: "Fine. He's forgiven.", to: 'dog_forgive' },
+    ],
+  },
+  dog_forgive: {
+    lines: [['you', "He'd forgive you too. Want to take him out? He's earned it."]],
+    choices: [
+      { label: 'Walk time!', to: 'walk_go' },
+      { label: 'After a nap.', to: 'dog_nap' },
+    ],
+  },
+  dog_good: {
+    lines: [['you', 'He really is. Best boy.']],
+    after: () => exciteDog(),
+    choices: [
+      { label: 'Who wants a walk?', to: 'walk_go' },
+      { label: 'Nap time for all three of us.', to: 'dog_nap' },
+      { label: 'Back to us.', to: 'menu' },
+    ],
+  },
+  dog_nap: { lines: [['you', 'Puppy pile! I love it.']], event: 'cuddle' },
+  dog_out: {
+    lines: [['you', "He's been sitting by the door. I think that's a yes."]],
+    choices: [
+      { label: "Let's go, buddy.", to: 'walk_go' },
+      { label: 'In a little bit.', to: 'menu' },
+    ],
+  },
 };
 
 function talkText(t) {
   const v = typeof t === 'function' ? t() : Array.isArray(t) ? pick(t) : t;
   return v;
+}
+
+// [['me' | 'you', text]] → lines for the text box
+function talkLines(lines) {
+  return (lines || []).map(([who, text]) => ({ who: who === 'me' ? player.who : partner.who, text: talkText(text) }));
 }
 
 function startTalk() {
@@ -1969,29 +2173,45 @@ function startTalk() {
   playTalkNode('hello');
 }
 
-function playTalkNode(id) {
-  const node = TALK_TREE[id];
+// Show some lines, then call onDone.
+function sayLines(lines, onDone) {
   dialogue.menu = null;
-  dialogue.lines = (node.lines || []).map(([who, text]) => ({ who: who === 'me' ? player.who : partner.who, text: talkText(text) }));
+  dialogue.lines = lines;
   dialogue.i = 0;
   dialogue.shown = 0;
-  dialogue.onDone = () => {
+  dialogue.onDone = onDone;
+  dialogue.active = true;
+  dialogue.blink = 0;
+}
+
+function playTalkNode(id, first = []) {
+  const node = TALK_TREE[id];
+  sayLines([...first, ...talkLines(node.lines)], () => {
     node.after?.();
     if (node.choices) {
-      dialogue.active = true;
       // Keep the last line up while choosing
+      dialogue.active = true;
       dialogue.i = Math.max(0, dialogue.lines.length - 1);
       dialogue.shown = dialogue.lines[dialogue.i]?.text.length ?? 0;
       dialogue.menu = { options: node.choices, sel: 0 };
     } else if (node.to) {
-      dialogue.active = true;
-      playTalkNode(node.to);
-    } else if (node.action === 'kiss') {
+      talkThen(node.to);
+    } else if (node.kiss) {
       giveKiss();
-    } else if (node.action === 'walk') {
-      if (walk.warning <= 0 && room.id !== 'yard') walk.next = Math.min(walk.next, 0.5);
+      // Lines are worked out now, while 'me' is still who you're playing
+      kiss.after = node.kiss === true ? null : { lines: talkLines(node.kiss.lines), then: node.kiss.then };
+    } else if (node.event) {
+      talkThen(node.event);
     }
-  };
+  });
+}
+
+// Where a chat goes next: another node, an event, or (nothing) swap characters.
+function talkThen(then) {
+  if (!then) swapCharacters();
+  else if (then === 'cuddle') startCuddle();
+  else if (then === 'walk') startDogWalk();
+  else playTalkNode(then);
 }
 
 function chooseOption(i) {
@@ -1999,7 +2219,117 @@ function chooseOption(i) {
   if (!m) return;
   const opt = m.options[i ?? m.sel];
   dialogue.menu = null;
-  playTalkNode(opt.to);
+  // You say what you picked, then they answer
+  playTalkNode(opt.to, [{ who: player.who, text: talkText(opt.say ?? opt.label) }]);
+}
+
+// Out the front door with the dog, wherever you are.
+function startDogWalk() {
+  const door = room.doors.find((d) => d.to === 'yard') ?? { to: 'yard' };
+  useDoor(door);
+}
+
+// ---- Cuddling ----------------------------------------------------------------------
+// From the talk menu: the screen fades, and you're both on the couch (or the
+// bed) side by side, with the dog curled up next to you. Hearts drift up now
+// and then; press E / KISS for a little peck, move to get up.
+// She always takes the left spot. `dog` is where the dog lies.
+const CUDDLE_SPOTS = {
+  apartment: {
+    left: { x: 478, y: 712, view: 'back', approach: { x: 478, y: 588 } },
+    right: { x: 546, y: 712, view: 'back', approach: { x: 546, y: 588 } },
+    dog: { x: 612, y: 722, flip: true, ground: { x: 612, y: 588 } },
+  },
+  bedroom: {
+    left: { x: 392, y: 668, view: 'front', approach: { x: 392, y: 712 } },
+    right: { x: 505, y: 672, view: 'front', approach: { x: 505, y: 712 } },
+    dog: { x: 598, y: 655, flip: true, ground: { x: 598, y: 712 } },
+  },
+};
+const CUDDLE_LINES = [
+  [['you', 'Comfy?'], ['me', 'Very.']],
+  [['you', 'This is my favorite part of the day.'], ['me', 'Mine too.']],
+  [['me', 'Scoot over.'], ['you', 'Never. Just squish in.']],
+  [['you', "Don't move. The dog's asleep and so am I, almost."]],
+];
+const cuddle = { active: false, heartIn: 0, peck: 0 };
+
+function startCuddle() {
+  const spots = CUDDLE_SPOTS[room.id];
+  if (!spots) return;
+  fade.door = {
+    fn: () => {
+      const mine = player.who === 'her' ? spots.left : spots.right;
+      const theirs = player.who === 'her' ? spots.right : spots.left;
+      cuddle.active = true;
+      cuddle.heartIn = 1.2;
+      player.seat = { ...mine, dog: spots.dog };
+      player.walkTime = 0;
+      player.idleTime = 0;
+      player.cheer = 0;
+      reading.progress = 0;
+      partner.seat = { ...theirs, dog: spots.dog };
+      partner.x = theirs.x;
+      partner.y = theirs.y;
+      partner.path = [];
+      partner.walkTime = 0;
+      // The dog's already curled up with you when the fade lifts
+      dog.state = 'couch';
+      dog.hop = null;
+      dog.lastSeat = player.seat;
+      dog.x = spots.dog.x;
+      dog.y = spots.dog.y;
+      dog.flip = spots.dog.flip;
+      dog.walkTime = 0;
+      trail.length = 0;
+      cam.snap = true;
+      sayLines(talkLines(pick(CUDDLE_LINES)));
+    },
+  };
+  fade.t = 0;
+}
+
+function endCuddle() {
+  cuddle.active = false;
+  partnerStandUp();
+  partner.stay = 5; // stays put a moment before wandering off
+  partner.greeted = true;
+  partner.idleTime = 0;
+}
+
+function cuddleKiss() {
+  if (cuddle.peck > 0) return;
+  cuddle.peck = 0.5;
+  const x = (player.seat.x + partner.seat.x) / 2;
+  const y = player.seat.y - 120 * room.scale;
+  for (let i = 0; i < 4; i++) addHeart(x + (i - 1.5) * 10, y, i % 2 === 0);
+}
+
+function updateCuddle(dt) {
+  if (!cuddle.active) return;
+  cuddle.peck = Math.max(0, cuddle.peck - dt);
+  cuddle.heartIn -= dt;
+  if (cuddle.heartIn <= 0) {
+    cuddle.heartIn = 1.4 + Math.random() * 1.6;
+    addHeart((player.seat.x + partner.seat.x) / 2 + (Math.random() - 0.5) * 30, player.seat.y - 115 * room.scale, false);
+  }
+}
+
+// Leaning in toward each other. He has no couch art: his back from the waist
+// up on the couch, cross-legged on the bed.
+function cuddlePose(ch, seat, other) {
+  const toward = other && other.x < seat.x ? 'left' : 'right';
+  if (ch.name === 'him') return seat.view === 'back' ? { name: 'back', waistUp: true } : { name: 'floorSit' };
+  if (seat.view === 'back') return { name: 'couchBackLeft', mirror: toward === 'right' };
+  return { name: 'couchFrontRight', mirror: toward === 'left' };
+}
+
+function drawCuddleHud() {
+  if (!cuddle.active || dialogue.active || fade.door) return;
+  const sx = toScreenX((player.seat.x + partner.seat.x) / 2);
+  const sy = toScreenY(player.seat.y - 160 * room.scale);
+  ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  pill(isTouch ? 'Tap KISS for a kiss · arrows to get up' : 'E: kiss · move to get up', sx, sy, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
 }
 
 function moveChoice(d) {
@@ -2059,8 +2389,9 @@ function drawChoices() {
       ctx.fill();
     }
     ctx.font = `${on ? 700 : 600} 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
-    ctx.fillStyle = o.to === 'kiss' ? '#ff9fc0' : on ? '#fff6e6' : '#d9cfc0';
-    ctx.fillText((o.to === 'kiss' ? '♥ ' : '') + o.label, L.x + 32, y + 1);
+    const love = !!TALK_TREE[o.to]?.kiss; // leads to a kiss
+    ctx.fillStyle = love ? '#ff9fc0' : on ? '#fff6e6' : '#d9cfc0';
+    ctx.fillText((love ? '♥ ' : '') + o.label, L.x + 32, y + 1);
   });
   ctx.textAlign = 'center';
 }
@@ -2263,7 +2594,7 @@ function updateWalk(dt) {
 
 // Reading, gaming or kissing: the dog waits until you're done.
 function minigameActive() {
-  return book.active || isGaming() || kiss.progress > 0 || kiss.celebrate > 0 || dialogue.active;
+  return book.active || isGaming() || kiss.progress > 0 || kiss.celebrate > 0 || dialogue.active || cuddle.active;
 }
 
 function startWalk() {
@@ -2513,6 +2844,7 @@ function update(dt) {
   updatePartner(dt);
   updateDog(dt);
   updateKiss(dt);
+  updateCuddle(dt);
   updateYard(dt);
 }
 
@@ -2813,6 +3145,7 @@ function partnerPose() {
 // He has no couch art: facing away he shows his back from the waist up,
 // otherwise he sits cross-legged.
 function seatedPose(ch, seat) {
+  if (cuddle.active) return cuddlePose(ch, seat, partner.seat);
   const celebrating = reading.popTime > 0;
   if (ch.name === 'him') {
     if (seat.view === 'back' && !celebrating) return { name: 'back', waistUp: true };
@@ -3016,6 +3349,7 @@ function drawHud() {
     pill(isTouch ? `Tap SIT to ${what}` : `Press E to sit and ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
   drawKissHud();
+  drawCuddleHud();
   if (!player.seat && (nearPoop() || nearBin())) {
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
     const what = nearPoop() ? 'pick up the poop' : 'throw it in the bin';
@@ -3289,6 +3623,7 @@ const kiss = {
   cooldown: 0,
   celebrate: 0, // counts down while he's jumping
   burstLeft: 0, // hearts still to release in the celebration
+  after: null, // { lines, then } for a kiss from the talk menu
 };
 const hearts = [];
 
@@ -3359,8 +3694,14 @@ function updateKiss(dt) {
   kiss.cooldown = Math.max(0, kiss.cooldown - dt);
   if (kiss.celebrate > 0) {
     kiss.celebrate = Math.max(0, kiss.celebrate - dt);
-    // Have a little chat, then swap who you're playing
-    if (kiss.celebrate === 0) startKissTalk(player.who, partner.who, swapCharacters);
+    // Have a little chat, then swap who you're playing. A kiss from the talk
+    // menu has its own lines and can lead on to something else instead.
+    if (kiss.celebrate === 0) {
+      const after = kiss.after;
+      kiss.after = null;
+      if (after) sayLines(after.lines, () => talkThen(after.then));
+      else startKissTalk(player.who, partner.who, swapCharacters);
+    }
   }
 
   // Release the celebration hearts over the first part of the jump
