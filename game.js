@@ -253,6 +253,9 @@ const KEY_DIRS = {
 };
 
 const ACTION_KEYS = ['KeyE', 'Space', 'Enter'];
+// Talking has its own key (and button) so it never gets mixed up with
+// sitting down when the other person is next to the couch.
+const TALK_KEYS = ['KeyT', 'KeyQ'];
 
 window.addEventListener('keydown', (e) => {
   if (ff.active) {
@@ -276,6 +279,11 @@ window.addEventListener('keydown', (e) => {
   if (ACTION_KEYS.includes(e.code)) {
     e.preventDefault();
     if (!e.repeat) action(); // holding doesn't count; you have to mash it
+    return;
+  }
+  if (TALK_KEYS.includes(e.code)) {
+    e.preventDefault();
+    if (!e.repeat) talkAction();
     return;
   }
   if (KEY_DIRS[e.code] || e.code.startsWith('Shift')) e.preventDefault();
@@ -318,6 +326,16 @@ for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
   runBtn.addEventListener(ev, () => {
     ff.touchJump = false;
   });
+}
+
+const talkBtn = document.getElementById('talk');
+talkBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  talkBtn.classList.add('active');
+  talkAction();
+});
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+  talkBtn.addEventListener(ev, () => talkBtn.classList.remove('active'));
 }
 
 const actionBtn = document.getElementById('action');
@@ -457,11 +475,19 @@ function updateFade(dt) {
   if (fade.t >= FADE_TIME * 2) fade.door = null;
 }
 
+// T / TALK: start a chat, or move it on like E does.
+function talkAction() {
+  if (dialogue.active) advanceDialogue();
+  else if (canKiss() && !fade.door && !book.active && performance.now() - dialogue.endedAt > TALK_GRACE) startTalk();
+}
+
 function action() {
   if (dialogue.active) {
     advanceDialogue();
     return;
   }
+  // Extra presses right after a chat ends don't sit you down or open a door.
+  if (performance.now() - dialogue.endedAt < TALK_GRACE) return;
   if (fade.door || book.active) return;
   if (player.seat) {
     if (cuddle.active) cuddleKiss();
@@ -472,10 +498,6 @@ function action() {
     const door = nearestDoor();
     if (door) useDoor(door);
     else endTogether();
-    return;
-  }
-  if (canKiss()) {
-    startTalk();
     return;
   }
   if (nearPoop()) {
@@ -527,7 +549,6 @@ function updateActionButton() {
   let label = '';
   if (player.seat) label = cuddle.active ? 'KISS' : isGaming() ? 'HIT' : 'READ';
   else if (together.mode) label = nearestDoor()?.label ?? (together.mode === 'piggy' ? 'HOP OFF' : 'LET GO');
-  else if (canKiss()) label = 'TALK';
   else if (nearPoop()) label = 'PICK UP';
   else if (nearBin()) label = 'TRASH';
   else if (nearestDoor()) label = nearestDoor().label;
@@ -536,6 +557,7 @@ function updateActionButton() {
   if (dialogue.active) label = 'NEXT';
   if (actionBtn.textContent !== label) actionBtn.textContent = label;
   actionBtn.disabled = !label;
+  talkBtn.disabled = dialogue.active || !canKiss() || !!fade.door || book.active;
 }
 
 // ---- TV --------------------------------------------------------------------
@@ -1901,7 +1923,8 @@ const KISS_TALKS = [
   [['b', 'The dog is staring at us, you know.'], ['a', "Let him stare. He's jealous."], ['b', 'Fair. Okay, my turn to steal some kisses.']],
   [['b', "I'm keeping count. That's at least a dozen."], ['a', 'Then I owe you another dozen.'], ['b', "I'll hold you to that."]],
 ];
-const dialogue = { active: false, lines: [], i: 0, shown: 0, onDone: null, talk: 0, menu: null };
+const dialogue = { active: false, lines: [], i: 0, shown: 0, onDone: null, talk: 0, menu: null, endedAt: -1e9 };
+const TALK_GRACE = 450; // ms after a chat ends when E is ignored
 
 // ---- Talking ----------------------------------------------------------------------
 // Walk up to the other person and press TALK. They say something, and a menu
@@ -2276,35 +2299,35 @@ function startDogWalk() {
 // on the left; it's mirrored when she's on the left.
 const coupleImg = loadImage('assets/couple.png');
 const COUPLE = {
-  front: [0, 0, 152, 218],
+  front: [0, 0, 152, 219],
   frontRight: [154, 0, 135, 220],
   right: [291, 0, 135, 220],
   backRight: [428, 0, 144, 219],
   back: [574, 0, 150, 221],
   backLeft: [726, 0, 137, 221],
   left: [865, 0, 131, 220],
-  frontLeft: [998, 0, 147, 219],
-  hug: [1147, 0, 156, 222],
-  hugSide: [1305, 0, 129, 229],
-  hugBack: [1436, 0, 139, 233],
-  kiss: [0, 235, 136, 230],
-  kissSide: [138, 235, 136, 220],
-  foreheadKiss: [276, 235, 130, 221],
-  sideBySide: [408, 235, 156, 223],
-  holdHands: [566, 235, 157, 222],
-  cuddleSit: [725, 235, 209, 161],
-  selfie: [936, 235, 163, 175],
-  piggyback: [1101, 235, 156, 193],
-  lean: [1259, 235, 187, 162],
-  walk0: [0, 467, 163, 181],
-  walk1: [165, 467, 162, 184],
-  walk2: [329, 467, 167, 186],
-  walk3: [498, 467, 147, 186],
-  walk4: [647, 467, 160, 185],
-  walk5: [809, 467, 154, 186],
-  walk6: [965, 467, 166, 186],
-  walk7: [1133, 467, 167, 186],
-  sitBack: [1302, 467, 169, 137],
+  frontLeft: [998, 0, 147, 220],
+  hug: [1147, 0, 143, 233],
+  hugSide: [1292, 0, 147, 234],
+  hugBack: [1441, 0, 139, 232],
+  kiss: [0, 236, 143, 227],
+  kissSide: [145, 236, 139, 224],
+  foreheadKiss: [286, 236, 138, 235],
+  sideBySide: [426, 236, 156, 224],
+  holdHands: [584, 236, 157, 223],
+  cuddleSit: [743, 236, 208, 161],
+  selfie: [953, 236, 163, 176],
+  piggyback: [1118, 236, 156, 196],
+  lean: [1276, 236, 207, 164],
+  walk0: [0, 473, 163, 181],
+  walk1: [165, 473, 162, 184],
+  walk2: [329, 473, 167, 185],
+  walk3: [498, 473, 147, 185],
+  walk4: [647, 473, 160, 184],
+  walk5: [809, 473, 155, 185],
+  walk6: [966, 473, 165, 185],
+  walk7: [1133, 473, 167, 185],
+  sitBack: [1302, 473, 169, 138],
 };
 const COUPLE_K = 0.82; // sheet px to map px, so they match the single sprites
 const COUPLE_WALK = 8; // walk frames per stride cycle
@@ -2678,6 +2701,7 @@ function advanceDialogue() {
   const line = dialogue.lines[dialogue.i];
   if (!line) {
     dialogue.active = false;
+    dialogue.endedAt = performance.now();
     dialogue.onDone?.();
     return;
   }
@@ -2689,6 +2713,7 @@ function advanceDialogue() {
   dialogue.shown = 0;
   if (dialogue.i >= dialogue.lines.length) {
     dialogue.active = false;
+    dialogue.endedAt = performance.now();
     const done = dialogue.onDone;
     dialogue.onDone = null;
     done?.();
@@ -3600,14 +3625,15 @@ function drawHud() {
   // Top of her head in map pixels: seated sprites are shorter than standing.
   const headTop = playerHeadHeight() + 4 * room.scale;
   const sx = toScreenX(anchor.x);
-  const sy = toScreenY(anchor.y - headTop);
+  // Stack above the "talk" hint when that's showing too
+  const sy = toScreenY(anchor.y - headTop) - (canKiss() && partner.room === room.id ? 28 : 0);
 
   if (nearestDoor() && !fade.door) {
     const door = nearestDoor();
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
     const text = isTouch ? `Tap ${door.label} to ${door.prompt}` : `Press E to ${door.prompt}`;
     pill(text, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
-  } else if (!player.seat && nearestSeat()) {
+  } else if (!player.seat && !together.mode && nearestSeat()) {
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
     const what = gamesHere() ? 'play video games' : 'read';
     pill(isTouch ? `Tap SIT to ${what}` : `Press E to sit and ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
@@ -3899,7 +3925,7 @@ function nearPartner() {
 }
 
 function canKiss() {
-  return !together.mode && !player.seat && kiss.cooldown <= 0 && kiss.celebrate <= 0 && nearPartner();
+  return !together.mode && !player.seat && kiss.celebrate <= 0 && !dialogue.active && nearPartner();
 }
 
 // Take control of the partner; you stay behind in their place.
@@ -4036,12 +4062,12 @@ function drawHearts() {
 
 // "Press E to talk" over the other person when you're close enough.
 function drawKissHud() {
-  if (partner.room !== room.id || kiss.cooldown > 0 || kiss.celebrate > 0 || player.seat || dialogue.active || together.mode) return;
+  if (partner.room !== room.id || kiss.celebrate > 0 || player.seat || dialogue.active || together.mode) return;
   if (!nearPartner()) return;
   const sx = toScreenX(partner.x);
   const sy = toScreenY(partner.y - poseHeight(partner.who, partnerPose()) - 6);
   ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
-  pill(isTouch ? 'Tap TALK to chat' : 'Press E to talk', sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
+  pill(isTouch ? 'Tap TALK to chat' : 'Press T to talk', sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
 }
 
 // Draw everyone back to front so whoever is lower on screen is in front.

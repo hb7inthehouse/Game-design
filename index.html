@@ -15,6 +15,7 @@
       --pad-border: rgba(255, 244, 225, 0.28);
       --pad-active: rgba(255, 244, 225, 0.32);
       --accent: #d98c4a;
+      --talk: #e68aa8;
       --font-ui: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
       color-scheme: dark;
     }
@@ -89,6 +90,17 @@
     }
     #dpad .action.active { background: var(--accent); filter: brightness(1.2); transform: scale(0.94); }
     #dpad .action:disabled { visibility: hidden; }
+    /* Talking gets its own button so it never sits you down by accident */
+    #dpad .talk {
+      grid-column: 1; grid-row: 3;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      background: var(--talk);
+      border-color: var(--talk);
+      color: var(--bg);
+    }
+    #dpad .talk.active { filter: brightness(1.2); transform: scale(0.94); }
+    #dpad .talk:disabled { visibility: hidden; }
 
     @media (hover: none), (pointer: coarse) {
       #dpad { display: grid; }
@@ -111,7 +123,7 @@
 </head>
 <body>
   <div id="help">
-    <span class="keys">Move: Arrows / WASD &middot; Run: Shift &middot; Sit, read, talk, doors, dog walks: E or Space &middot; Hitboxes: H</span>
+    <span class="keys">Move: Arrows / WASD &middot; Run: Shift &middot; Talk: T &middot; Sit, read, doors, dog walks: E or Space &middot; Hitboxes: H</span>
     <span class="touch">Hold the arrows to walk &middot; tap RUN to speed up &middot; walk to the couch to read</span>
   </div>
   <div id="game"><canvas id="canvas"></canvas></div>
@@ -121,6 +133,7 @@
     <button class="run" id="run" aria-pressed="false">RUN</button>
     <button class="right" data-dir="right" aria-label="Right">&#9654;</button>
     <button class="down" data-dir="down" aria-label="Down">&#9660;</button>
+    <button class="talk" id="talk" disabled>TALK</button>
     <button class="action" id="action" disabled></button>
   </div>
   <script src="game.js"></script>
