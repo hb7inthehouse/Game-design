@@ -410,6 +410,7 @@ function nearestDoor() {
 function useDoor(door) {
   if (fade.door) return;
   if (door.to === 'yard') walk.warning = 0; // made it: the timer stops
+  if (door.to === 'yard' && together.mode) endTogether(); // the dog walk is just you
   fade.door = door;
   fade.t = 0;
   player.walkTime = 0;
@@ -435,6 +436,12 @@ function arriveThrough(door) {
   kiss.progress = 0;
   if (room.id === 'yard') startWalk();
   if (from === 'yard') endWalk();
+  if (together.mode) {
+    // Through the door together
+    partner.room = room.id;
+    partner.x = player.x;
+    partner.y = player.y;
+  }
   resize();
   cam.snap = true;
 }
@@ -459,6 +466,12 @@ function action() {
   if (player.seat) {
     if (cuddle.active) cuddleKiss();
     else if (ff.active) ff.attackQueued = true; // HIT in Forest Falls
+    return;
+  }
+  if (together.mode) {
+    const door = nearestDoor();
+    if (door) useDoor(door);
+    else endTogether();
     return;
   }
   if (canKiss()) {
@@ -513,6 +526,7 @@ function standUp(dx, dy) {
 function updateActionButton() {
   let label = '';
   if (player.seat) label = cuddle.active ? 'KISS' : isGaming() ? 'HIT' : 'READ';
+  else if (together.mode) label = nearestDoor()?.label ?? (together.mode === 'piggy' ? 'HOP OFF' : 'LET GO');
   else if (canKiss()) label = 'TALK';
   else if (nearPoop()) label = 'PICK UP';
   else if (nearBin()) label = 'TRASH';
@@ -1792,7 +1806,7 @@ function choosePartnerSpot() {
 
 function updatePartner(dt) {
   partner.wave = Math.max(0, partner.wave - dt);
-  if (partner.room !== room.id || room.id !== 'apartment' || cuddle.active) return;
+  if (partner.room !== room.id || room.id !== 'apartment' || cuddle.active || together.mode) return;
   const near = Math.hypot(player.x - partner.x, player.y - partner.y) < PARTNER_GREET * room.scale && !player.seat;
   // Busy with you: kissing, celebrating or talking
   if (kiss.progress > 0 || kiss.celebrate > 0 || dialogue.active) {
@@ -1909,6 +1923,7 @@ const dialogue = { active: false, lines: [], i: 0, shown: 0, onDone: null, talk:
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const MAIN_CHOICES = [
   { label: 'Kiss', to: 'kiss', say: ['Come here, you.', "C'mere for a sec.", 'I owe you a kiss.'] },
+  { label: 'Hug', to: 'hug', say: ['Hug?', "C'mere. Hug.", 'I need a hug.'] },
   { label: "How's your day going?", to: 'day' },
   { label: 'What should we do?', to: 'plans' },
   { label: 'You look really cute today.', to: 'compliment' },
@@ -1922,9 +1937,28 @@ const TALK_TREE = {
   },
   menu: { lines: [['you', ['Anything else?', "What else is on your mind?", 'Mm-hm?']]], choices: MAIN_CHOICES },
   kiss: { lines: [['you', ['Oh? Okay...', 'Mwah!', 'Finally.']]], kiss: true },
+  hug: {
+    lines: [['you', ['Aww. Always.', 'Hug time!', 'Get in here.']]],
+    kiss: {
+      pose: ['hug', 'hugSide', 'hugBack'],
+      lines: [['you', 'Mm. You give the best hugs.'], ['me', "I've had practice."], ['you', 'On who?!'], ['me', 'The dog.']],
+      then: 'menu',
+    },
+  },
   bye: { lines: [['you', ["Don't be long!", 'Okay, bye bye.', "I'll be here."]]] },
 
   // Shared endings
+  hands_go: { lines: [['you', ['Lead the way.', 'Yes! Where are we going?', 'Okay. Hold on tight.']]], event: 'hands' },
+  piggy_go: { lines: [['you', () => (partner.who === 'him' ? 'Hop on! ...Oof. Okay. Where to?' : "Yes! Bend down, I'm climbing on.")]], event: 'piggy' },
+  selfie_go: { lines: [['you', 'Wait, get my good side!'], ['me', 'Say cheese!']], event: 'selfie' },
+  selfie_after: {
+    lines: [['you', ["Cute. That one's going on the fridge.", 'Send me that one!', "Okay, we're adorable."]]],
+    choices: [
+      { label: 'Another one?', to: 'selfie_again' },
+      { label: 'We really are.', to: 'menu' },
+    ],
+  },
+  selfie_again: { lines: [['you', 'Okay, silly face this time!']], event: 'selfie' },
   cuddle_go: { lines: [['you', ["Yay. Come on, let's get comfy.", 'Best idea all day.', "Scoot in. I've got the good blanket."]]], event: 'cuddle' },
   walk_go: { lines: [['you', ['He heard "walk." Look at that tail go.', 'Leash is by the door. Go go go!', "Okay buddy, let's go!"]]], event: 'walk', after: () => exciteDog() },
 
@@ -1946,6 +1980,7 @@ const TALK_TREE = {
     choices: [
       { label: 'Smooth.', to: 'day_smooth' },
       { label: 'Same here.', to: 'day_same' },
+      { label: 'Come for a walk with me?', to: 'hands_go' },
     ],
   },
   day_smooth: {
@@ -1992,7 +2027,7 @@ const TALK_TREE = {
   },
   kiss_better: {
     lines: [['you', 'Prescription filled.']],
-    kiss: { lines: [['you', 'Better?'], ['me', 'A little.'], ['you', 'Only a little? Okay, couch. Now. More treatment needed.']], then: 'cuddle' },
+    kiss: { pose: 'foreheadKiss', lines: [['you', 'Better?'], ['me', 'A little.'], ['you', 'Only a little? Okay, couch. Now. More treatment needed.']], then: 'cuddle' },
   },
   day_okay: { lines: [['you', "You sure? I'm right here if you want to talk."], ['me', 'I know. Thank you.']], to: 'menu' },
 
@@ -2002,6 +2037,7 @@ const TALK_TREE = {
     choices: [
       { label: 'Couch and cuddles.', to: 'plans_couch' },
       { label: "Let's take the dog out.", to: 'plans_walk' },
+      { label: 'Go for a little walk with me?', to: 'hands_go' },
       { label: 'Surprise me.', to: 'plans_surprise' },
       { label: 'Nothing. I just wanted to see you.', to: 'plans_see' },
     ],
@@ -2028,10 +2064,11 @@ const TALK_TREE = {
   },
   plans_wait: { lines: [['you', "He's going to sit by the door and sigh at you. Loudly."]], to: 'menu', after: () => exciteDog() },
   plans_surprise: {
-    lines: [['you', 'Okay. Staring contest. Loser owes the winner a kiss.']],
+    lines: [['you', 'Okay. Staring contest, loser owes the winner a kiss. Or... piggyback ride!']],
     choices: [
-      { label: "You're on.", to: 'stare' },
-      { label: "That's a trap.", to: 'stare_trap' },
+      { label: 'Staring contest. You\'re on.', to: 'stare' },
+      { label: 'Piggyback!', to: 'piggy_go' },
+      { label: "Those both sound like traps.", to: 'stare_trap' },
     ],
   },
   stare_trap: {
@@ -2069,6 +2106,7 @@ const TALK_TREE = {
     lines: [['you', ['Stoppp. ...Okay, keep going.', 'Who, me?', "You're just saying that."]]],
     choices: [
       { label: 'I mean it.', to: 'comp_mean' },
+      { label: 'Hold still, I want a picture.', to: 'selfie_go' },
       { label: 'Just teasing.', to: 'comp_tease' },
     ],
   },
@@ -2082,7 +2120,7 @@ const TALK_TREE = {
   },
   kiss_comp: {
     lines: [['you', 'Hehe.']],
-    kiss: { lines: [['you', "You're blushing."], ['me', "YOU'RE blushing."], ['you', "...Okay, we're both blushing."]], then: 'menu' },
+    kiss: { pose: 'kissSide', lines: [['you', "You're blushing."], ['me', "YOU'RE blushing."], ['you', "...Okay, we're both blushing."]], then: 'menu' },
   },
   kiss_make: {
     lines: [['you', 'Oh, I will.']],
@@ -2105,7 +2143,7 @@ const TALK_TREE = {
   },
   kiss_sorry: {
     lines: [['you', "That's a start."]],
-    kiss: { lines: [['you', '...Okay. Apology accepted.'], ['me', 'And the cuddles?'], ['you', 'Those too. Come on.']], then: 'cuddle' },
+    kiss: { pose: 'foreheadKiss', lines: [['you', '...Okay. Apology accepted.'], ['me', 'And the cuddles?'], ['you', 'Those too. Come on.']], then: 'cuddle' },
   },
   comp_side: { lines: [['you', "He's right there. Let's ask him. ...See? He's wagging at ME."]], to: 'menu', after: () => exciteDog() },
 
@@ -2197,7 +2235,7 @@ function playTalkNode(id, first = []) {
     } else if (node.to) {
       talkThen(node.to);
     } else if (node.kiss) {
-      giveKiss();
+      giveKiss(talkText(node.kiss.pose));
       // Lines are worked out now, while 'me' is still who you're playing
       kiss.after = node.kiss === true ? null : { lines: talkLines(node.kiss.lines), then: node.kiss.then };
     } else if (node.event) {
@@ -2211,6 +2249,8 @@ function talkThen(then) {
   if (!then) swapCharacters();
   else if (then === 'cuddle') startCuddle();
   else if (then === 'walk') startDogWalk();
+  else if (then === 'hands' || then === 'piggy') startTogether(then);
+  else if (then === 'selfie') startSelfie(() => playTalkNode('selfie_after'));
   else playTalkNode(then);
 }
 
@@ -2227,6 +2267,226 @@ function chooseOption(i) {
 function startDogWalk() {
   const door = room.doors.find((d) => d.to === 'yard') ?? { to: 'yard' };
   useDoor(door);
+}
+
+// ---- Together -------------------------------------------------------------------------
+// Art of the two of them together (assets/couple.png): kissing, hugging,
+// cuddling, walking hand in hand, piggyback and a selfie. While one of these
+// is showing, it's drawn in place of both characters. In the art he's always
+// on the left; it's mirrored when she's on the left.
+const coupleImg = loadImage('assets/couple.png');
+const COUPLE = {
+  front: [0, 0, 152, 218],
+  frontRight: [154, 0, 135, 220],
+  right: [291, 0, 135, 220],
+  backRight: [428, 0, 144, 219],
+  back: [574, 0, 150, 221],
+  backLeft: [726, 0, 137, 221],
+  left: [865, 0, 131, 220],
+  frontLeft: [998, 0, 147, 219],
+  hug: [1147, 0, 156, 222],
+  hugSide: [1305, 0, 129, 229],
+  hugBack: [1436, 0, 139, 233],
+  kiss: [0, 235, 136, 230],
+  kissSide: [138, 235, 136, 220],
+  foreheadKiss: [276, 235, 130, 221],
+  sideBySide: [408, 235, 156, 223],
+  holdHands: [566, 235, 157, 222],
+  cuddleSit: [725, 235, 209, 161],
+  selfie: [936, 235, 163, 175],
+  piggyback: [1101, 235, 156, 193],
+  lean: [1259, 235, 187, 162],
+  walk0: [0, 467, 163, 181],
+  walk1: [165, 467, 162, 184],
+  walk2: [329, 467, 167, 186],
+  walk3: [498, 467, 147, 186],
+  walk4: [647, 467, 160, 185],
+  walk5: [809, 467, 154, 186],
+  walk6: [965, 467, 166, 186],
+  walk7: [1133, 467, 167, 186],
+  sitBack: [1302, 467, 169, 137],
+};
+const COUPLE_K = 0.82; // sheet px to map px, so they match the single sprites
+const COUPLE_WALK = 8; // walk frames per stride cycle
+
+// Walking hand in hand ('hands') or with her on his back ('piggy'): you steer
+// the two of them; E lets go.
+const together = { mode: null, left: false };
+const SELFIE_TIME = 4;
+const selfie = { t: 0 }; // counts up while the photo is on screen; 0 = hidden
+
+function hisSideLeft() {
+  const hisX = player.who === 'him' ? player.x : partner.x;
+  const herX = player.who === 'her' ? player.x : partner.x;
+  return hisX <= herX;
+}
+
+function startTogether(mode) {
+  partnerStandUp();
+  together.mode = mode;
+  together.left = false;
+  partner.path = [];
+  partner.walkTime = 0;
+  partner.x = player.x;
+  partner.y = player.y;
+  player.walkTime = 0;
+  player.idleTime = 0;
+  player.cheer = 0;
+  player.wave = 0;
+  player.facing = Math.PI / 2;
+  exciteDog();
+}
+
+// Let go: the other one steps out to their side.
+function endTogether() {
+  together.mode = null;
+  const s = room.scale;
+  const hisSide = together.left ? 1 : -1; // mirrored when walking left
+  const side = partner.who === 'him' ? hisSide : -hisSide;
+  let px = player.x + side * 34 * s;
+  let mx = player.x - side * 18 * s;
+  if (!isFree(px, player.y) || !isFree(mx, player.y)) {
+    px = player.x + side * 4;
+    mx = player.x;
+  }
+  partner.x = px;
+  partner.y = player.y + 2;
+  player.x = mx;
+  partner.room = room.id;
+  partner.facing = Math.atan2(player.y - partner.y, player.x - partner.x);
+  partner.stay = 5;
+  partner.greeted = true;
+  partner.idleTime = 0;
+  partner.walkTime = 0;
+  player.facing = Math.atan2(partner.y - player.y, partner.x - player.x);
+  player.walkTime = 0;
+  player.nearHim = true; // no hello wave
+}
+
+function togetherFrame() {
+  const moving = player.walkTime > 0;
+  if (moving && player.moveDx !== 0) together.left = player.moveDx < 0;
+  const bob = moving ? Math.abs(Math.sin(player.gait * Math.PI * 2)) * 4 : 0;
+  if (together.mode === 'piggy') return { name: 'piggyback', mirror: together.left, lift: bob };
+  if (moving) {
+    if (player.moveDx !== 0) return { name: 'walk' + (Math.floor(player.gait * COUPLE_WALK) % COUPLE_WALK), mirror: player.moveDx < 0 };
+    return { name: player.moveDy < 0 ? 'back' : 'front', lift: bob };
+  }
+  // The sheet's side views don't agree on which way they face, so turned
+  // three-quarter frames (mirrored for the left) stand in for them.
+  const i = ((Math.round(player.facing / (Math.PI / 4)) % 8) + 8) % 8;
+  return [
+    { name: 'frontRight' }, { name: 'frontRight' }, { name: 'holdHands' }, { name: 'frontRight', mirror: true },
+    { name: 'frontRight', mirror: true }, { name: 'backRight', mirror: true }, { name: 'back' }, { name: 'backRight' },
+  ][i];
+}
+
+// The pair to draw instead of the two of them, if any.
+function coupleNow() {
+  if (together.mode) return { ...togetherFrame(), x: player.x, y: player.y };
+  if (cuddle.active && player.seat && partner.seat) {
+    const x = (player.seat.x + partner.seat.x) / 2;
+    if (player.seat.view === 'back') return { name: 'sitBack', x, y: player.seat.y + 8, shadow: false };
+    // On the bed: sitting together, then her head on his shoulder, and back
+    return { name: Math.floor(cuddle.t / 7) % 2 ? 'lean' : 'cuddleSit', x, y: player.seat.y + 30, shadow: false };
+  }
+  if (kiss.celebrate > 0 && kiss.pose) {
+    return { name: kiss.pose, x: (player.x + partner.x) / 2, y: Math.max(player.y, partner.y), mirror: !hisSideLeft() };
+  }
+  return null;
+}
+
+function drawCouple(c) {
+  if (!spriteReady(coupleImg)) return;
+  const [sx, sy, w, h] = COUPLE[c.name];
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  ctx.scale(room.scale, room.scale);
+  if (c.shadow !== false) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, w * COUPLE_K * 0.38, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.translate(0, -(c.lift ?? 0));
+  ctx.scale(c.mirror ? -COUPLE_K : COUPLE_K, COUPLE_K);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(coupleImg, sx, sy, w, h, -w / 2, -h, w, h);
+  ctx.restore();
+}
+
+function drawTogetherHud() {
+  if (!together.mode || dialogue.active || fade.door) return;
+  const sx = toScreenX(player.x);
+  const sy = toScreenY(player.y - 200 * room.scale);
+  const what = together.mode === 'piggy' ? 'hop off' : 'let go';
+  ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  pill(isTouch ? `Tap ${what.toUpperCase()} to ${what}` : `E: ${what}`, sx, sy, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
+}
+
+// Selfie: a camera flash, then the photo pops up like a polaroid.
+function startSelfie(onDone) {
+  selfie.t = 0.0001;
+  exciteDog();
+  onDone?.();
+}
+
+function updateSelfie(dt) {
+  if (selfie.t <= 0) return;
+  selfie.t += dt;
+  if (selfie.t > SELFIE_TIME) selfie.t = 0;
+}
+
+function drawSelfie() {
+  if (selfie.t <= 0 || !spriteReady(coupleImg)) return;
+  const t = selfie.t;
+  const boxH = viewW < 500 ? 118 : 132;
+  const size = Math.min(230, viewW * 0.55, (viewH - boxH - 60) * 0.8);
+  const pop = Math.min(1, t / 0.25);
+  const fadeOut = Math.min(1, (SELFIE_TIME - t) / 0.4);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, fadeOut);
+  ctx.translate(viewW / 2, (viewH - boxH) / 2);
+  ctx.rotate(-0.05);
+  ctx.scale(0.7 + 0.3 * pop, 0.7 + 0.3 * pop);
+  // Polaroid: white card, photo of the room behind you, the two of you in front
+  const pad = size * 0.06;
+  const W = size + pad * 2;
+  const H = size + pad * 2 + size * 0.2;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.fillRect(-W / 2 + 6, -H / 2 + 8, W, H);
+  ctx.fillStyle = '#fbf7ef';
+  ctx.fillRect(-W / 2, -H / 2, W, H);
+  const px = -size / 2;
+  const py = -H / 2 + pad;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(px, py, size, size);
+  ctx.clip();
+  if (spriteReady(room.img)) {
+    const span = 300;
+    const cx = Math.min(Math.max(player.x, span / 2), room.w - span / 2);
+    const cy = Math.min(Math.max(player.y - 100, span / 2), room.h - span / 2);
+    ctx.drawImage(room.img, cx - span / 2, cy - span / 2, span, span, px, py, size, size);
+  } else {
+    ctx.fillStyle = '#6b5a48';
+    ctx.fillRect(px, py, size, size);
+  }
+  const [sx, sy, w, h] = COUPLE.selfie;
+  const k = (size * 0.92) / Math.max(w, h);
+  ctx.drawImage(coupleImg, sx, sy, w, h, -w * k / 2, py + size - h * k, w * k, h * k);
+  ctx.restore();
+  ctx.fillStyle = '#5b4a3a';
+  ctx.font = `600 ${Math.round(size * 0.075)}px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('us ♥', 0, H / 2 - size * 0.1);
+  ctx.restore();
+  // Flash
+  if (t < 0.35) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * (1 - t / 0.35)})`;
+    ctx.fillRect(0, 0, viewW, viewH);
+  }
 }
 
 // ---- Cuddling ----------------------------------------------------------------------
@@ -2252,7 +2512,7 @@ const CUDDLE_LINES = [
   [['me', 'Scoot over.'], ['you', 'Never. Just squish in.']],
   [['you', "Don't move. The dog's asleep and so am I, almost."]],
 ];
-const cuddle = { active: false, heartIn: 0, peck: 0 };
+const cuddle = { active: false, heartIn: 0, peck: 0, t: 0 };
 
 function startCuddle() {
   const spots = CUDDLE_SPOTS[room.id];
@@ -2263,6 +2523,7 @@ function startCuddle() {
       const theirs = player.who === 'her' ? spots.right : spots.left;
       cuddle.active = true;
       cuddle.heartIn = 1.2;
+      cuddle.t = 0;
       player.seat = { ...mine, dog: spots.dog };
       player.walkTime = 0;
       player.idleTime = 0;
@@ -2307,6 +2568,7 @@ function cuddleKiss() {
 
 function updateCuddle(dt) {
   if (!cuddle.active) return;
+  cuddle.t += dt;
   cuddle.peck = Math.max(0, cuddle.peck - dt);
   cuddle.heartIn -= dt;
   if (cuddle.heartIn <= 0) {
@@ -2838,6 +3100,7 @@ function update(dt) {
     updateActionButton();
     updateDog(dt);
     updateKiss(dt); // hearts keep floating away
+    updateSelfie(dt);
     return;
   }
   updatePlayer(dt);
@@ -2845,6 +3108,7 @@ function update(dt) {
   updateDog(dt);
   updateKiss(dt);
   updateCuddle(dt);
+  updateSelfie(dt);
   updateYard(dt);
 }
 
@@ -3350,6 +3614,7 @@ function drawHud() {
   }
   drawKissHud();
   drawCuddleHud();
+  drawTogetherHud();
   if (!player.seat && (nearPoop() || nearBin())) {
     ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
     const what = nearPoop() ? 'pick up the poop' : 'throw it in the bin';
@@ -3358,6 +3623,7 @@ function drawHud() {
   drawWalkBanner();
   drawBookOverlay();
   drawFFOverlay();
+  drawSelfie();
   drawDialogue();
   if (fade.door) {
     const k = fade.t < FADE_TIME ? fade.t / FADE_TIME : 2 - fade.t / FADE_TIME;
@@ -3624,6 +3890,7 @@ const kiss = {
   celebrate: 0, // counts down while he's jumping
   burstLeft: 0, // hearts still to release in the celebration
   after: null, // { lines, then } for a kiss from the talk menu
+  pose: null, // couple art shown while it lasts
 };
 const hearts = [];
 
@@ -3632,7 +3899,7 @@ function nearPartner() {
 }
 
 function canKiss() {
-  return !player.seat && kiss.cooldown <= 0 && kiss.celebrate <= 0 && nearPartner();
+  return !together.mode && !player.seat && kiss.cooldown <= 0 && kiss.celebrate <= 0 && nearPartner();
 }
 
 // Take control of the partner; you stay behind in their place.
@@ -3675,7 +3942,9 @@ function addHeart(x, y, big) {
   });
 }
 
-function giveKiss() {
+// `pose` is the couple art to show: a kiss (default), a hug, a forehead kiss...
+function giveKiss(pose) {
+  kiss.pose = pose ?? pick(['kiss', 'kissSide']);
   player.wave = 0;
   player.idleTime = 0;
   player.facing = Math.atan2(partner.y - player.y, partner.x - player.x);
@@ -3767,7 +4036,7 @@ function drawHearts() {
 
 // "Press E to talk" over the other person when you're close enough.
 function drawKissHud() {
-  if (partner.room !== room.id || kiss.cooldown > 0 || kiss.celebrate > 0 || player.seat || dialogue.active) return;
+  if (partner.room !== room.id || kiss.cooldown > 0 || kiss.celebrate > 0 || player.seat || dialogue.active || together.mode) return;
   if (!nearPartner()) return;
   const sx = toScreenX(partner.x);
   const sy = toScreenY(partner.y - poseHeight(partner.who, partnerPose()) - 6);
@@ -3777,6 +4046,16 @@ function drawKissHud() {
 
 // Draw everyone back to front so whoever is lower on screen is in front.
 function drawActors() {
+  const pair = coupleNow();
+  if (pair) {
+    const both = [
+      { y: pair.y, draw: () => drawCouple(pair) },
+      { y: dog.hop ? Math.max(dog.hop.from.y, dog.hop.to.y) : dog.y, draw: drawDog },
+    ];
+    both.sort((a, b) => a.y - b.y);
+    for (const a of both) a.draw();
+    return;
+  }
   const actors = [
     { y: player.seat ? player.seat.y : player.y, draw: drawPlayer },
     { y: dog.hop ? Math.max(dog.hop.from.y, dog.hop.to.y) : dog.y, draw: drawDog },
