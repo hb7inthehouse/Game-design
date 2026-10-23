@@ -3266,7 +3266,8 @@ const STORE_PARTS = {
 for (const [key, part] of Object.entries(STORE_PARTS)) {
   ROOMS['store-' + key] = {
     id: 'store-' + key, key, store: true, src: `assets/store-${key}.jpg`, w: 1254, h: 1254,
-    scale: STORE_SCALE, viewSpan: 760, floor: [], obstacles: [], seats: [], doors: [],
+    scale: STORE_SCALE, viewSpan: 760, floor: [], seats: [], doors: [],
+    obstacles: STORE_RECTS[key].map(([x, y, w, h]) => ({ name: 'shelf', x, y, w, h })), // just for the H overlay
     bits: atob(STORE_MASKS.rooms[key]), img: loadImage(`assets/store-${key}.jpg`), ...part,
   };
 }
@@ -3298,8 +3299,9 @@ function canLeaveStore() {
   return shop.paid || !shop.list.some((i) => i.got);
 }
 
+// Feet take up an oval: wide side to side, shallow front to back.
 function storeFreeIn(rm, x, y, r) {
-  return [[x, y], [x - r, y], [x + r, y], [x, y - r], [x, y + r]].every(
+  return [[x, y], [x - r, y], [x + r, y], [x, y - r * 0.5], [x, y + r * 0.5]].every(
     ([px, py]) => storeFloorAt(rm, px, py) || (inExit(rm, px, py) && canLeaveStore()),
   );
 }
@@ -4326,9 +4328,25 @@ function drawHitboxes() {
   for (const a of room.floor) ctx.strokeRect(a.x, a.y, a.w, a.h);
   ctx.fillStyle = 'rgba(255, 40, 40, 0.25)';
   ctx.strokeStyle = 'rgba(255, 40, 40, 0.9)';
-  for (const o of partner.room === room.id ? [...room.obstacles, partnerBox()] : room.obstacles) {
-    ctx.fillRect(o.x, o.y, o.w, o.h);
-    ctx.strokeRect(o.x, o.y, o.w, o.h);
+  if (room.store) {
+    // The store's blocked areas are outlines as well as boxes: show every blocked cell
+    if (!room.hitCanvas) {
+      const { cell, w, h } = STORE_MASKS;
+      room.hitCanvas = document.createElement('canvas');
+      room.hitCanvas.width = w;
+      room.hitCanvas.height = h;
+      const hc = room.hitCanvas.getContext('2d');
+      hc.fillStyle = 'rgba(255, 40, 40, 0.4)';
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!storeFloorAt(room, x * cell + 1, y * cell + 1)) hc.fillRect(x, y, 1, 1);
+    }
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(room.hitCanvas, 0, 0, room.w, room.h);
+    ctx.imageSmoothingEnabled = true;
+  } else {
+    for (const o of partner.room === room.id ? [...room.obstacles, partnerBox()] : room.obstacles) {
+      ctx.fillRect(o.x, o.y, o.w, o.h);
+      ctx.strokeRect(o.x, o.y, o.w, o.h);
+    }
   }
   ctx.strokeStyle = 'rgba(255, 255, 0, 0.9)';
   ctx.beginPath();
