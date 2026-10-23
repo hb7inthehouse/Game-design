@@ -1,6 +1,12 @@
 // Living Room — a free-roam sandbox across pixel-art rooms.
 // World coordinates are in pixels of the current room's map image.
 
+// Who's who. Used in the text box and all through the dialogue.
+const NAMES = { her: 'Sidney', him: 'Hudson' };
+const DOG = 'Dude';
+const myName = () => NAMES[player.who]; // whoever you're playing
+const yourName = () => NAMES[partner.who]; // the other one
+
 // Each room: its map, walkable floor (rectangles her whole footprint must stay
 // inside), furniture she can't walk through, couch seats, and doors. Rooms are
 // drawn at different scales, so `scale` sizes the characters to match.
@@ -62,7 +68,7 @@ const ROOMS = {
       },
       {
         // The front door: only opens when the dog needs to go out
-        to: 'yard', label: 'WALK', prompt: 'take the dog out',
+        to: 'yard', label: 'WALK', prompt: `take ${DOG} out`,
         x: 752, y: 775, range: 85,
         spawn: { x: 752, y: 765, facing: -Math.PI / 2 },
         when: () => walk.warning > 0,
@@ -1909,7 +1915,6 @@ function partnerSeatedPose(ch, seat) {
 // line typing out across a big box at the bottom of the screen. Tap or press E
 // to finish the line or move on. Plays after a full kiss bar.
 
-const NAMES = { her: 'Her', him: 'Him' }; // put their real names here
 const PORTRAITS = {
   her: { r: [8, 0, 102, 102] }, // head crops from each 'front' pose
   him: { r: [12, 0, 117, 117] },
@@ -1920,7 +1925,7 @@ const KISS_TALKS = [
   [['b', 'What was that for?'], ['a', 'Do I need a reason?'], ['b', "No. But now it's my turn."]],
   [['b', 'Okay, okay, I surrender!'], ['a', 'Good. I win.'], ['b', 'Rematch. Right now.']],
   [['b', "You're in a really good mood today."], ['a', "I'm always in a good mood when I'm with you."], ['b', 'Smooth. Come here, you.']],
-  [['b', 'The dog is staring at us, you know.'], ['a', "Let him stare. He's jealous."], ['b', 'Fair. Okay, my turn to steal some kisses.']],
+  [['b', `${DOG} is staring at us, you know.`], ['a', "Let him stare. He's jealous."], ['b', 'Fair. Okay, my turn to steal some kisses.']],
   [['b', "I'm keeping count. That's at least a dozen."], ['a', 'Then I owe you another dozen.'], ['b', "I'll hold you to that."]],
 ];
 const dialogue = { active: false, lines: [], i: 0, shown: 0, onDone: null, talk: 0, menu: null, endedAt: -1e9 };
@@ -1950,30 +1955,30 @@ const MAIN_CHOICES = [
   { label: "How's your day going?", to: 'day' },
   { label: 'What should we do?', to: 'plans' },
   { label: 'You look really cute today.', to: 'compliment' },
-  { label: "How's the pup doing?", to: 'dog' },
+  { label: `How's ${DOG} doing?`, to: 'dog' },
   { label: 'See you in a bit.', to: 'bye' },
 ];
 const TALK_TREE = {
   hello: {
-    lines: [['you', ['Hey, you.', "Oh, hi! What's up?", 'There you are.', 'Hiii. Need something?']]],
+    lines: [['you', () => pick(['Hey, you.', `Oh, hi ${myName()}! What's up?`, 'There you are.', `Hiii, ${myName()}. Need something?`])]],
     choices: MAIN_CHOICES,
   },
-  menu: { lines: [['you', ['Anything else?', "What else is on your mind?", 'Mm-hm?']]], choices: MAIN_CHOICES },
+  menu: { lines: [['you', () => pick([`Anything else, ${myName()}?`, 'What else is on your mind?', 'Mm-hm?'])]], choices: MAIN_CHOICES },
   kiss: { lines: [['you', ['Oh? Okay...', 'Mwah!', 'Finally.']]], kiss: true },
   hug: {
     lines: [['you', ['Aww. Always.', 'Hug time!', 'Get in here.']]],
     kiss: {
       pose: ['hug', 'hugSide', 'hugBack'],
-      lines: [['you', 'Mm. You give the best hugs.'], ['me', "I've had practice."], ['you', 'On who?!'], ['me', 'The dog.']],
+      lines: [['you', 'Mm. You give the best hugs.'], ['me', "I've had practice."], ['you', 'On who?!'], ['me', `${DOG}.`]],
       then: 'menu',
     },
   },
-  bye: { lines: [['you', ["Don't be long!", 'Okay, bye bye.', "I'll be here."]]] },
+  bye: { lines: [['you', () => pick([`Don't be long, ${myName()}!`, 'Okay, bye bye.', "I'll be here."])]] },
 
   // Shared endings
   hands_go: { lines: [['you', ['Lead the way.', 'Yes! Where are we going?', 'Okay. Hold on tight.']]], event: 'hands' },
   piggy_go: { lines: [['you', () => (partner.who === 'him' ? 'Hop on! ...Oof. Okay. Where to?' : "Yes! Bend down, I'm climbing on.")]], event: 'piggy' },
-  selfie_go: { lines: [['you', 'Wait, get my good side!'], ['me', 'Say cheese!']], event: 'selfie' },
+  selfie_go: { lines: [['you', 'Wait, get my good side!'], ['me', `Say cheese! You too, ${DOG}.`]], event: 'selfie' },
   selfie_after: {
     lines: [['you', ["Cute. That one's going on the fridge.", 'Send me that one!', "Okay, we're adorable."]]],
     choices: [
@@ -1983,7 +1988,7 @@ const TALK_TREE = {
   },
   selfie_again: { lines: [['you', 'Okay, silly face this time!']], event: 'selfie' },
   cuddle_go: { lines: [['you', ["Yay. Come on, let's get comfy.", 'Best idea all day.', "Scoot in. I've got the good blanket."]]], event: 'cuddle' },
-  walk_go: { lines: [['you', ['He heard "walk." Look at that tail go.', 'Leash is by the door. Go go go!', "Okay buddy, let's go!"]]], event: 'walk', after: () => exciteDog() },
+  walk_go: { lines: [['you', [`${DOG} heard "walk." Look at that tail go.`, 'Leash is by the door. Go go go!', `Okay ${DOG}, let's go!`]]], event: 'walk', after: () => exciteDog() },
 
   // How's your day going?
   day: {
@@ -2044,7 +2049,7 @@ const TALK_TREE = {
     lines: [['you', 'Okay. Want a distraction instead?']],
     choices: [
       { label: 'A kiss would help.', to: 'kiss_better' },
-      { label: "Let's take the dog out.", to: 'walk_go' },
+      { label: `Let's take ${DOG} out.`, to: 'walk_go' },
       { label: 'Just sit with me a minute.', to: 'cuddle_go' },
     ],
   },
@@ -2056,10 +2061,10 @@ const TALK_TREE = {
 
   // What should we do?
   plans: {
-    lines: [['you', "Hmm... couch and a movie? Or the pup's been eyeing the door."]],
+    lines: [['you', `Hmm... couch and a movie? Or ${DOG}'s been eyeing the door.`]],
     choices: [
       { label: 'Couch and cuddles.', to: 'plans_couch' },
-      { label: "Let's take the dog out.", to: 'plans_walk' },
+      { label: `Let's take ${DOG} out.`, to: 'plans_walk' },
       { label: 'Go for a little walk with me?', to: 'hands_go' },
       { label: 'Surprise me.', to: 'plans_surprise' },
       { label: 'Nothing. I just wanted to see you.', to: 'plans_see' },
@@ -2081,7 +2086,7 @@ const TALK_TREE = {
   plans_walk: {
     lines: [['you', "Good call. He's been giving us the eyes all afternoon."]],
     choices: [
-      { label: 'Come on, buddy!', to: 'walk_go' },
+      { label: `Come on, ${DOG}!`, to: 'walk_go' },
       { label: 'Actually, five more minutes.', to: 'plans_wait' },
     ],
   },
@@ -2126,7 +2131,7 @@ const TALK_TREE = {
 
   // You look really cute today.
   compliment: {
-    lines: [['you', ['Stoppp. ...Okay, keep going.', 'Who, me?', "You're just saying that."]]],
+    lines: [['you', () => pick(['Stoppp. ...Okay, keep going.', 'Who, me?', `You're just saying that, ${myName()}.`])]],
     choices: [
       { label: 'I mean it.', to: 'comp_mean' },
       { label: 'Hold still, I want a picture.', to: 'selfie_go' },
@@ -2151,7 +2156,7 @@ const TALK_TREE = {
   },
   comp_later: { lines: [['you', 'Suspense is overrated. ...But fine.']], to: 'menu' },
   comp_tease: {
-    lines: [['you', "Wow. Rude. I'm telling the dog."]],
+    lines: [['you', `Wow. Rude. I'm telling ${DOG}.`]],
     choices: [
       { label: 'Wait, I was kidding!', to: 'comp_sorry' },
       { label: "He's on my side.", to: 'comp_side' },
@@ -2172,9 +2177,9 @@ const TALK_TREE = {
 
   // How's the pup doing?
   dog: {
-    lines: [['you', ['He stole one of my socks again.', 'He did the zoomies around the couch earlier.', 'Asleep on my side of the bed, obviously.']]],
+    lines: [['you', [`${DOG} stole one of my socks again.`, 'He did the zoomies around the couch earlier.', 'Asleep on my side of the bed, obviously.']]],
     choices: [
-      { label: 'Bad dog!', to: 'dog_bad' },
+      { label: `Bad ${DOG}!`, to: 'dog_bad' },
       { label: 'Good boy.', to: 'dog_good' },
       { label: 'Does he need to go out?', to: 'dog_out' },
     ],
@@ -2183,7 +2188,7 @@ const TALK_TREE = {
     lines: [['you', "You don't mean that. Look at that face."]],
     after: () => exciteDog(),
     choices: [
-      { label: '...Okay, good dog.', to: 'dog_good' },
+      { label: `...Okay, good boy, ${DOG}.`, to: 'dog_good' },
       { label: "Fine. He's forgiven.", to: 'dog_forgive' },
     ],
   },
@@ -2195,7 +2200,7 @@ const TALK_TREE = {
     ],
   },
   dog_good: {
-    lines: [['you', 'He really is. Best boy.']],
+    lines: [['you', `He really is. ${DOG} is the best boy.`]],
     after: () => exciteDog(),
     choices: [
       { label: 'Who wants a walk?', to: 'walk_go' },
@@ -2207,7 +2212,7 @@ const TALK_TREE = {
   dog_out: {
     lines: [['you', "He's been sitting by the door. I think that's a yes."]],
     choices: [
-      { label: "Let's go, buddy.", to: 'walk_go' },
+      { label: `Let's go, ${DOG}.`, to: 'walk_go' },
       { label: 'In a little bit.', to: 'menu' },
     ],
   },
@@ -2563,7 +2568,7 @@ function drawSelfie() {
   ctx.font = `600 ${Math.round(size * 0.075)}px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('us ♥', 0, H / 2 - size * 0.1);
+  ctx.fillText(`${NAMES.her} & ${NAMES.him} ♥`, 0, H / 2 - size * 0.1);
   ctx.restore();
   // Flash
   if (t < 0.35) {
@@ -2593,7 +2598,7 @@ const CUDDLE_LINES = [
   [['you', 'Comfy?'], ['me', 'Very.']],
   [['you', 'This is my favorite part of the day.'], ['me', 'Mine too.']],
   [['me', 'Scoot over.'], ['you', 'Never. Just squish in.']],
-  [['you', "Don't move. The dog's asleep and so am I, almost."]],
+  [['you', `Don't move. ${DOG}'s asleep and so am I, almost.`]],
 ];
 const cuddle = { active: false, heartIn: 0, peck: 0, t: 0 };
 
@@ -3128,19 +3133,19 @@ function drawWalkBanner() {
   let warn = false;
   let bar = -1;
   if (walk.failT > 0) {
-    text = 'Too late! He had an accident inside.';
+    text = `Too late! ${DOG} had an accident inside.`;
     warn = true;
   } else if (walk.warning > 0) {
-    text = `The dog needs to go out! Get to the front door: ${Math.ceil(walk.warning)}s`;
+    text = `${DOG} needs to go out! Get to the front door: ${Math.ceil(walk.warning)}s`;
     warn = true;
     bar = walk.warning / WALK_WARNING;
   } else if (room.id === 'yard') {
-    if (walk.phase === 'sniff') text = 'Walk him around until he goes';
+    if (walk.phase === 'sniff') text = `Walk ${DOG} around until he goes`;
     else if (walk.phase === 'squat') text = "He's going...";
-    else if (walk.phase === 'poop') text = 'Pick up after him';
+    else if (walk.phase === 'poop') text = `Pick up after ${DOG}`;
     else if (walk.phase === 'carry') text = 'Throw it in the bin';
     else if (walk.phase === 'clean') text = 'All clean! Walk off the left edge to go back inside';
-    if (walk.phase !== 'clean' && player.x < 170) text = "You can't go back in until you've picked up after him";
+    if (walk.phase !== 'clean' && player.x < 170) text = `You can't go back in until you've picked up after ${DOG}`;
   }
   if (!text) return;
   ctx.font = '700 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
