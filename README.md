@@ -33,8 +33,20 @@ She's a pixel-art sprite set (`assets/her.png`): 8 standing directions, a walk a
 
 The camera is zoomed in and follows her. The dog (a pixel-art sprite sheet in `assets/dog.png`) walks along behind her, and when she stops it stands, sits facing her, lies down and eventually falls asleep. It naps on the couch while she reads and does a play bow when she finishes a chapter or fills the kiss bar.
 
-At a random moment every 2 to 4 minutes indoors the dog needs to go out: a banner gives you 10 seconds to reach the front door at the bottom of the living room and press WALK, or he has an accident. Outside (`assets/yard.jpg`) he's on a leash and wanders and sniffs until he goes. Pick it up (PICK UP), throw it in the bin (TRASH), then walk off the left edge to go back inside. You can't go back in until you've cleaned up.
+Take Dude out whenever you like from the front door at the bottom of the living room (press E and pick the walk). Outside (`assets/yard.jpg`) he's on a leash and wanders and sniffs until he goes. Pick it up (PICK UP), throw it in the bin (TRASH), then walk off the left edge to go back inside. You can't go back in until you've cleaned up.
 
 ## Tweaking
 
 Everything lives in `game.js`. Each room in `ROOMS` has its map image, walkable `floor`, furniture `obstacles`, couch `seats` and `doors`, all in that map's pixels, plus a `scale` that sizes the characters to the room. Press **H** in-game to see the floor and furniture boxes. `VIEW_SPAN` sets how far the camera is zoomed in, and the `DOG_*_AFTER` timings set how long the dog waits before sitting, lying down and sleeping.
+
+
+## Heading out
+
+Press E at the front door (bottom of the living room) and choose where to go:
+
+- **Take Dude for a walk**: a short chat, then out to the yard on the leash. There's no timer any more; walks only happen when you choose one.
+- **Go to Walmart**: you call the other one over, you both walk to the door, say bye to Dude (he waits by the door), and head out. You can also suggest it from the talk menu ("What should we do?" → "Want to go to Walmart?").
+
+**Walmart** is six connected parts of the store (`assets/store-*.jpg`): walk off an edge to move to the next part. You walk in hand in hand with a shopping list of five things (always a squeaky toy for Dude, plus four random items from 17 across the store). Things on the list sparkle on the shelves and show up on the mini map of the whole store (`assets/store-map.jpg`, top right), along with where you are. Press E (GRAB) next to one to put it in the cart. When you're done, pay at a register at the front (PAY): if anything's missing, the other one reminds you and you can keep shopping or pay anyway. You get a receipt with the total and your shopping time (your best time is saved), then walk out the front doors to go home, where Dude runs up to greet you. Walkable floor in the store comes from `store-data.js`, generated from the floor colour of the art, along with the item spots and registers.
+
+All text in the game uses the Pixelify Sans pixel font, to match the art.

@@ -4,6 +4,8 @@
 // Who's who. Used in the text box and all through the dialogue.
 const NAMES = { her: 'Sidney', him: 'Hudson' };
 const DOG = 'Dude';
+// Every bit of text is drawn in this pixel font, to match the art.
+const PIXEL_FONT = '"Pixelify Sans", ui-monospace, monospace';
 const myName = () => NAMES[player.who]; // whoever you're playing
 const yourName = () => NAMES[partner.who]; // the other one
 
@@ -67,11 +69,10 @@ const ROOMS = {
         spawn: { x: 772, y: 272, facing: Math.PI / 2 },
       },
       {
-        // The front door: only opens when the dog needs to go out
-        to: 'yard', label: 'WALK', prompt: `take ${DOG} out`,
+        // The front door: asks where you're headed (a walk with Dude, or Walmart)
+        to: 'yard', label: 'DOOR', prompt: 'head out', menu: true,
         x: 752, y: 775, range: 85,
         spawn: { x: 752, y: 765, facing: -Math.PI / 2 },
-        when: () => walk.warning > 0,
       },
     ],
   },
@@ -397,6 +398,7 @@ function circleHitsRect(cx, cy, r, rect) {
 
 function isFree(x, y, ignorePartner = false) {
   const r = PLAYER_RADIUS * room.scale;
+  if (room.store) return storeFreeIn(room, x, y, r);
   // Edges of her footprint all have to be on the floor
   const onFloor = (px, py) => room.floor.some((a) => px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h);
   if (![[x, y], [x - r, y], [x + r, y], [x, y - r], [x, y + r]].every(([px, py]) => onFloor(px, py))) return false;
@@ -433,7 +435,6 @@ function nearestDoor() {
 
 function useDoor(door) {
   if (fade.door) return;
-  if (door.to === 'yard') walk.warning = 0; // made it: the timer stops
   if (door.to === 'yard' && together.mode) endTogether(); // the dog walk is just you
   fade.door = door;
   fade.t = 0;
@@ -495,6 +496,15 @@ function action() {
   // Extra presses right after a chat ends don't sit you down or open a door.
   if (performance.now() - dialogue.endedAt < TALK_GRACE) return;
   if (fade.door || book.active) return;
+  if (room.store) {
+    // In the store E grabs things off your list and pays
+    if (shop.receipt) {
+      if (shop.receipt.t > 0.4) shop.receipt = null;
+    } else if (nearItem()) grabItem(nearItem());
+    else if (nearRegister()) payAtRegister();
+    return;
+  }
+  if (outing.phase) return;
   if (player.seat) {
     if (cuddle.active) cuddleKiss();
     else if (ff.active) ff.attackQueued = true; // HIT in Forest Falls
@@ -502,7 +512,10 @@ function action() {
   }
   if (together.mode) {
     const door = nearestDoor();
-    if (door) useDoor(door);
+    if (door?.menu) {
+      endTogether();
+      startDoorTalk();
+    } else if (door) useDoor(door);
     else endTogether();
     return;
   }
@@ -516,7 +529,8 @@ function action() {
   }
   const door = nearestDoor();
   if (door) {
-    useDoor(door);
+    if (door.menu) startDoorTalk();
+    else useDoor(door);
     return;
   }
   const seat = nearestSeat();
@@ -559,11 +573,12 @@ function updateActionButton() {
   else if (nearBin()) label = 'TRASH';
   else if (nearestDoor()) label = nearestDoor().label;
   else if (nearestSeat()) label = 'SIT';
-  if (fade.door || book.active) label = '';
+  if (room.store) label = shop.receipt ? 'OK' : nearItem() ? 'GRAB' : nearRegister() ? 'PAY' : '';
+  if (fade.door || book.active || outing.phase) label = '';
   if (dialogue.active) label = 'NEXT';
   if (actionBtn.textContent !== label) actionBtn.textContent = label;
   actionBtn.disabled = !label;
-  talkBtn.disabled = dialogue.active || !canKiss() || !!fade.door || book.active;
+  talkBtn.disabled = dialogue.active || !canKiss() || !!fade.door || book.active || !!outing.phase || !!room.store;
 }
 
 // ---- TV --------------------------------------------------------------------
@@ -1204,7 +1219,7 @@ function ffBgLayer(name, parallax, y, mirrorTiles = true) {
 }
 
 function ffText(text, x, y, size, color, align = 'center') {
-  fx.font = `800 ${size}px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
+  fx.font = `800 ${size}px "Pixelify Sans", ui-monospace, monospace`;
   fx.textAlign = align;
   fx.textBaseline = 'middle';
   fx.lineWidth = Math.max(3, size / 4);
@@ -1415,10 +1430,10 @@ function drawFFOverlay() {
   ctx.imageSmoothingEnabled = true;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = '700 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '700 14px "Pixelify Sans", ui-monospace, monospace';
   ctx.fillStyle = '#f3e6d2';
   ctx.fillText('Forest Falls', viewW / 2, 16);
-  ctx.font = '500 11px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '500 11px "Pixelify Sans", ui-monospace, monospace';
   ctx.fillStyle = 'rgba(243, 230, 210, 0.75)';
   ctx.fillText(isTouch ? '◀ ▶ run · JUMP jump · HIT attack' : '←/→ run · Space/↑ jump · E/X attack · ↓ drop · Esc quit', viewW / 2 - 20, 34, viewW - 110);
   const b = ffCloseButton();
@@ -1674,7 +1689,7 @@ function drawBookOverlay() {
   // Header: chapter and page, time left
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = '700 15px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '700 15px "Pixelify Sans", ui-monospace, monospace';
   ctx.fillStyle = '#f3e6d2';
   const pct = book.cells.length ? Math.floor((book.read / book.cells.length) * 100) : 0;
   ctx.fillText(`Chapter ${reading.chapters + 1} · Page ${book.page + 1} of ${PAGES_PER_CHAPTER} · ${pct}% read`, viewW / 2, 20);
@@ -1689,7 +1704,7 @@ function drawBookOverlay() {
   ctx.beginPath();
   ctx.roundRect(bx, 36, Math.max(10, bw * frac), 10, 5);
   ctx.fill();
-  ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '600 12px "Pixelify Sans", ui-monospace, monospace';
   ctx.fillStyle = '#f3e6d2';
   ctx.fillText(`${Math.ceil(book.timeLeft)}s left`, viewW / 2, 56);
 
@@ -1709,7 +1724,7 @@ function drawBookOverlay() {
   ctx.stroke();
 
   if (book.page === 0 && book.read === 0 && book.turnT < 0 && !book.result) {
-    ctx.font = '600 13px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    ctx.font = '600 13px "Pixelify Sans", ui-monospace, monospace';
     pill(isTouch ? 'Drag your finger along every line to read it' : 'Drag along every line to read it (or steer with the arrow keys)', viewW / 2, L.y + L.h + 4 > viewH - 14 ? viewH - 18 : L.y + L.h + 4, 'rgba(28, 25, 21, 0.9)', '#f3e6d2');
   }
 
@@ -1719,7 +1734,7 @@ function drawBookOverlay() {
     ctx.save();
     ctx.translate(viewW / 2, viewH / 2);
     ctx.scale(pop, pop);
-    ctx.font = '800 30px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    ctx.font = '800 30px "Pixelify Sans", ui-monospace, monospace';
     ctx.lineWidth = 7;
     ctx.strokeStyle = 'rgba(20, 15, 10, 0.95)';
     const text = book.result === 'win' ? 'Chapter Complete' : 'Out of time!';
@@ -1975,6 +1990,51 @@ const TALK_TREE = {
   },
   bye: { lines: [['you', () => pick([`Don't be long, ${myName()}!`, 'Okay, bye bye.', "I'll be here."])]] },
 
+  // The front door
+  door: {
+    lines: [['me', ['Hmm... where to?', 'Where should we go?', 'Heading out...']]],
+    choices: [
+      { label: `Take ${DOG} for a walk`, to: 'door_walk', say: () => `${DOG}! Want to go for a walk?` },
+      { label: 'Go to Walmart', to: 'door_store', say: () => `${yourName()}! Want to go to Walmart?` },
+      { label: 'Never mind', to: 'door_stay', say: 'Actually... never mind.' },
+    ],
+  },
+  door_stay: {},
+  door_walk: {
+    lines: [['you', ["Look at him, he's already spinning in circles.", 'He heard the W word. No going back now.']]],
+    after: () => exciteDog(),
+    choices: [
+      { label: `Come on, ${DOG}!`, to: 'walk_go' },
+      { label: 'Want to come with us?', to: 'door_walk_partner' },
+      { label: 'Wait, not yet.', to: 'door_walk_no' },
+    ],
+  },
+  door_walk_partner: { lines: [['you', "I'll keep the couch warm. Have fun, you two!"]], event: 'walk' },
+  door_walk_no: { lines: [['you', "Aw, look at his little face. You can't do that to him."]] },
+  door_store: {
+    lines: [['you', ["Ooh, yes. We're out of like... everything.", 'Walmart? Say less. Let me grab my shoes.']]],
+    choices: [
+      { label: "Let's make a list.", to: 'store_list' },
+      { label: 'Just to look around?', to: 'store_browse' },
+      { label: 'Actually, never mind.', to: 'store_no' },
+    ],
+  },
+  store_list: { lines: [['you', `Bananas, snacks... and something for ${DOG}, obviously.`], ['me', 'Obviously.']], event: 'store' },
+  store_browse: { lines: [['you', "That's how we end up with a whole cart of stuff. ...I'm in."]], event: 'store' },
+  store_no: { lines: [['you', 'Tell me if you change your mind!']] },
+  store_missing: {
+    lines: [['you', () => {
+      const left = shop.list.filter((i) => !i.got).map((i) => i.name);
+      return `Wait, we still need ${left.length > 1 ? left.slice(0, -1).join(', ') + ' and ' + left.at(-1) : left[0]}!`;
+    }]],
+    choices: [
+      { label: 'Keep shopping', to: 'store_keep' },
+      { label: 'Pay anyway', to: 'store_anyway' },
+    ],
+  },
+  store_keep: { lines: [['you', 'Okay! Check the map, it shows where everything is.']] },
+  store_anyway: { lines: [['you', "Eh, we'll get the rest next time."]], event: 'pay' },
+
   // Shared endings
   hands_go: { lines: [['you', ['Lead the way.', 'Yes! Where are we going?', 'Okay. Hold on tight.']]], event: 'hands' },
   piggy_go: { lines: [['you', () => (partner.who === 'him' ? 'Hop on! ...Oof. Okay. Where to?' : "Yes! Bend down, I'm climbing on.")]], event: 'piggy' },
@@ -2066,6 +2126,7 @@ const TALK_TREE = {
       { label: 'Couch and cuddles.', to: 'plans_couch' },
       { label: `Let's take ${DOG} out.`, to: 'plans_walk' },
       { label: 'Go for a little walk with me?', to: 'hands_go' },
+      { label: 'Want to go to Walmart?', to: 'door_store' },
       { label: 'Surprise me.', to: 'plans_surprise' },
       { label: 'Nothing. I just wanted to see you.', to: 'plans_see' },
     ],
@@ -2277,6 +2338,8 @@ function talkThen(then) {
   if (!then) swapCharacters();
   else if (then === 'cuddle') startCuddle();
   else if (then === 'walk') startDogWalk();
+  else if (then === 'store') startOuting();
+  else if (then === 'pay') storePay();
   else if (then === 'hands' || then === 'piggy') startTogether(then);
   else if (then === 'selfie') startSelfie(() => playTalkNode('selfie_after'));
   else playTalkNode(then);
@@ -2557,11 +2620,11 @@ function drawCouple(c) {
 }
 
 function drawTogetherHud() {
-  if (!together.mode || dialogue.active || fade.door) return;
+  if (!together.mode || dialogue.active || fade.door || room.store || outing.phase) return;
   const sx = toScreenX(player.x);
   const sy = toScreenY(player.y - 200 * room.scale);
   const what = together.mode === 'piggy' ? 'hop off' : 'let go';
-  ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '600 12px "Pixelify Sans", ui-monospace, monospace';
   pill(isTouch ? `Tap ${what.toUpperCase()} to ${what}` : `E: ${what}`, sx, sy, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
 }
 
@@ -2620,7 +2683,7 @@ function drawSelfie() {
   ctx.drawImage(coupleImg, sx, sy, w, h, -w * k / 2, py + size - h * k, w * k, h * k);
   ctx.restore();
   ctx.fillStyle = '#5b4a3a';
-  ctx.font = `600 ${Math.round(size * 0.075)}px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
+  ctx.font = `600 ${Math.round(size * 0.075)}px "Pixelify Sans", ui-monospace, monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`${NAMES.her} & ${NAMES.him} ♥`, 0, H / 2 - size * 0.1);
@@ -2733,7 +2796,7 @@ function drawCuddleHud() {
   if (!cuddle.active || dialogue.active || fade.door) return;
   const sx = toScreenX((player.seat.x + partner.seat.x) / 2);
   const sy = toScreenY(player.seat.y - 160 * room.scale);
-  ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '600 12px "Pixelify Sans", ui-monospace, monospace';
   pill(isTouch ? 'Tap KISS for a kiss · arrows to get up' : 'E: kiss · move to get up', sx, sy, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
 }
 
@@ -2749,7 +2812,7 @@ function choiceLayout() {
   const boxW = Math.min(viewW - 24, 720);
   const boxH = viewW < 500 ? 118 : 132;
   const rowH = viewW < 500 ? 26 : 28;
-  ctx.font = '600 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '600 14px "Pixelify Sans", ui-monospace, monospace';
   const w = Math.min(boxW, Math.max(...m.options.map((o) => ctx.measureText(o.label).width)) + 52);
   const h = m.options.length * rowH + 16;
   const x = (viewW + boxW) / 2 - w;
@@ -2793,7 +2856,7 @@ function drawChoices() {
       ctx.closePath();
       ctx.fill();
     }
-    ctx.font = `${on ? 700 : 600} 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif`;
+    ctx.font = `${on ? 700 : 600} 14px "Pixelify Sans", ui-monospace, monospace`;
     const love = !!TALK_TREE[o.to]?.kiss; // leads to a kiss
     ctx.fillStyle = love ? '#ff9fc0' : on ? '#fff6e6' : '#d9cfc0';
     ctx.fillText((love ? '♥ ' : '') + o.label, L.x + 32, y + 1);
@@ -2920,10 +2983,10 @@ function drawDialogue() {
   const tw = bx + boxW - tx - pad;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.font = '800 15px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '800 15px "Pixelify Sans", ui-monospace, monospace';
   ctx.fillStyle = line.who === 'her' ? '#ff9fc0' : '#b9a6ff';
   ctx.fillText(NAMES[line.who], tx, py + 2);
-  ctx.font = viewW < 500 ? '600 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif' : '600 17px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = viewW < 500 ? '600 14px "Pixelify Sans", ui-monospace, monospace' : '600 17px "Pixelify Sans", ui-monospace, monospace';
   ctx.fillStyle = '#f6efe4';
   const lh = viewW < 500 ? 19 : 23;
   const lines = wrapText(line.text, tw);
@@ -2951,29 +3014,16 @@ function drawDialogue() {
 }
 
 // ---- Dog walks ---------------------------------------------------------------
-// Every 30 seconds indoors the dog needs to go out, and you get 10 seconds to
-// reach the front door (bottom of the living room). Out in the yard he's on a
-// leash and wanders and sniffs until he goes; pick it up, throw it in the bin,
-// then walk off the left edge to go back in. You can't go back in until you've
-// cleaned up.
-
-// The dog needs to go out at a random moment every 2 to 4 minutes indoors.
-const WALK_MIN = 120;
-const WALK_MAX = 240;
-function nextWalkIn() {
-  return WALK_MIN + Math.random() * (WALK_MAX - WALK_MIN);
-}
-const WALK_WARNING = 10; // seconds to reach the front door
-const WALK_FAIL_TIME = 3.5; // how long the "too late" message stays up
+// Whenever you like: press E at the front door and pick "Take Dude out". Out
+// in the yard he's on a leash and wanders and sniffs until he goes; pick it
+// up, throw it in the bin, then walk off the left edge to go back in. You
+// can't go back in until you've cleaned up.
 const LEASH = 150; // leash length, map px (times the room scale)
 const SQUAT_TIME = 2.2;
 const BIN = { x: 1239, y: 268 }; // rim of the bin in the yard
 const THROW_TIME = 0.6;
 
 const walk = {
-  next: nextWalkIn(), // countdown to the next warning
-  warning: 0, // countdown while the dog is waiting at the door
-  failT: 0, // countdown for the failure message
   phase: null, // in the yard: sniff | squat | poop | carry | clean
   sniffed: 0, // seconds of wandering so far
   needAfter: 0, // seconds of wandering before he goes
@@ -2983,29 +3033,7 @@ const walk = {
   throwFrom: null,
 };
 
-function updateWalk(dt) {
-  walk.failT = Math.max(0, walk.failT - dt);
-  if (room.id === 'yard' || fade.door || minigameActive()) return;
-  if (walk.warning > 0) {
-    walk.warning -= dt;
-    if (walk.warning <= 0) {
-      walk.warning = 0;
-      walk.failT = WALK_FAIL_TIME;
-      walk.next = nextWalkIn();
-    }
-    return;
-  }
-  walk.next -= dt;
-  if (walk.next <= 0) walk.warning = WALK_WARNING;
-}
-
-// Reading, gaming or kissing: the dog waits until you're done.
-function minigameActive() {
-  return book.active || isGaming() || kiss.progress > 0 || kiss.celebrate > 0 || dialogue.active || cuddle.active;
-}
-
 function startWalk() {
-  walk.warning = 0;
   walk.phase = 'sniff';
   walk.sniffed = 0;
   walk.needAfter = 8 + Math.random() * 6;
@@ -3018,7 +3046,6 @@ function startWalk() {
 
 function endWalk() {
   walk.phase = null;
-  walk.next = nextWalkIn();
 }
 
 function nearPoop() {
@@ -3186,14 +3213,9 @@ function drawYardAir() {
 function drawWalkBanner() {
   let text = '';
   let warn = false;
-  let bar = -1;
-  if (walk.failT > 0) {
-    text = `Too late! ${DOG} had an accident inside.`;
-    warn = true;
-  } else if (walk.warning > 0) {
-    text = `${DOG} needs to go out! Get to the front door: ${Math.ceil(walk.warning)}s`;
-    warn = true;
-    bar = walk.warning / WALK_WARNING;
+  const bar = -1;
+  if (room.store) {
+    [text, warn] = storeBanner();
   } else if (room.id === 'yard') {
     if (walk.phase === 'sniff') text = `Walk ${DOG} around until he goes`;
     else if (walk.phase === 'squat') text = "He's going...";
@@ -3203,7 +3225,7 @@ function drawWalkBanner() {
     if (walk.phase !== 'clean' && player.x < 170) text = `You can't go back in until you've picked up after ${DOG}`;
   }
   if (!text) return;
-  ctx.font = '700 14px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '700 14px "Pixelify Sans", ui-monospace, monospace';
   const w = Math.min(viewW - 24, ctx.measureText(text).width + 28);
   const cx = viewW / 2;
   const y = 14;
@@ -3221,14 +3243,580 @@ function drawWalkBanner() {
   }
 }
 
+// ---- Going out: the front door, leaving together, and Walmart ------------------
+// Press E at the front door to choose: take Dude for a walk, or go to Walmart.
+// For Walmart you call the other one over, you both walk to the door, say bye
+// to Dude (who waits by the door), and head out. The store is six connected
+// parts (assets/store-*.jpg); walk off an edge to go to the next part. There's
+// a shopping list (always something for Dude, plus four random things), a mini
+// map of the whole store with the list marked on it, and registers at the
+// front. Pay, walk out the front doors, and you're home again.
+
+const STORE_SCALE = 0.62; // characters are drawn smaller here: the store art is zoomed out
+// Each part: which bit of the store map (assets/store-map.jpg) it shows, as
+// [x, y, x scale, y scale] from part pixels to map pixels, and its neighbours.
+const STORE_PARTS = {
+  tl: { name: 'Toys & Clothing', map: [46, 11, 0.479, 0.462], next: { right: 'tc', down: 'bl' } },
+  tc: { name: 'Aisles', map: [199, 5, 0.626, 0.496], next: { left: 'tl', right: 'tr', down: 'bc' } },
+  tr: { name: 'Fresh & Frozen', map: [829, 25, 0.425, 0.419], next: { left: 'tc', down: 'br' } },
+  bl: { name: 'Restrooms', map: [39, 309, 0.444, 0.618], next: { up: 'tl', right: 'bc' } },
+  bc: { name: 'Front of store', map: [376, 397, 0.5625, 0.5625], next: { up: 'tc', left: 'bl', right: 'br' } },
+  br: { name: 'Customer Service', map: [737, 366, 0.506, 0.56], next: { up: 'tr', left: 'bc' } },
+};
+for (const [key, part] of Object.entries(STORE_PARTS)) {
+  ROOMS['store-' + key] = {
+    id: 'store-' + key, key, store: true, src: `assets/store-${key}.jpg`, w: 1254, h: 1254,
+    scale: STORE_SCALE, viewSpan: 760, floor: [], obstacles: [], seats: [], doors: [],
+    bits: atob(STORE_MASKS.rooms[key]), img: loadImage(`assets/store-${key}.jpg`), ...part,
+  };
+}
+const storeMapImg = loadImage('assets/store-map.jpg');
+const STORE_EDGE = 40; // this close to an edge and you go through to the next part
+const STORE_EXIT = { x: 520, y: 860, w: 240, h: 200 }; // the front doors, in the front part
+const STORE_DOORWAY = { x: 640, y: 1000 }; // where you come in
+const ITEM_RANGE = 70;
+const STORE_COMMENTS = ['Got it!', 'Ooh, good one.', 'Check!', 'Into the cart.', 'Yesss.', 'One down!'];
+
+const shop = { active: false, list: [], paid: false, t: 0, receipt: null, popups: [], best: loadCount('storeBest') };
+const outing = { phase: null, t: 0, path: [] };
+
+function storeFloorAt(rm, x, y) {
+  const { cell, w, h } = STORE_MASKS;
+  const cx = Math.min(w - 1, Math.max(0, Math.floor(x / cell)));
+  const cy = Math.min(h - 1, Math.max(0, Math.floor(y / cell)));
+  const i = cy * w + cx;
+  return (rm.bits.charCodeAt(i >> 3) >> (7 - (i & 7))) & 1;
+}
+
+function inExit(rm, x, y) {
+  const e = STORE_EXIT;
+  return rm.key === 'bc' && x >= e.x && x <= e.x + e.w && y >= e.y && y <= e.y + e.h;
+}
+
+// Can you leave yet? Once you've paid, or if you never picked anything up.
+function canLeaveStore() {
+  return shop.paid || !shop.list.some((i) => i.got);
+}
+
+function storeFreeIn(rm, x, y, r) {
+  return [[x, y], [x - r, y], [x + r, y], [x, y - r], [x, y + r]].every(
+    ([px, py]) => storeFloorAt(rm, px, py) || (inExit(rm, px, py) && canLeaveStore()),
+  );
+}
+
+// ---- The front door menu ----
+
+function startDoorTalk() {
+  player.walkTime = 0;
+  player.idleTime = 0;
+  player.facing = Math.PI / 2;
+  dialogue.active = true;
+  dialogue.blink = 0;
+  playTalkNode('door');
+}
+
+// ---- Leaving together ----
+
+// Walk an actor along a path of points; true once they're at the end.
+function followPath(actor, path, dt) {
+  if (!path.length) {
+    actor.walkTime = 0;
+    return true;
+  }
+  const t = path[0];
+  const dx = t.x - actor.x;
+  const dy = t.y - actor.y;
+  const d = Math.hypot(dx, dy);
+  const step = WALK_SPEED * room.scale * dt;
+  if (d <= step) {
+    actor.x = t.x;
+    actor.y = t.y;
+    path.shift();
+    if (!path.length) actor.walkTime = 0;
+    return !path.length;
+  }
+  actor.x += (dx / d) * step;
+  actor.y += (dy / d) * step;
+  actor.walkTime += dt;
+  actor.gait += step / room.scale / GAIT.walkCycle;
+  if (actor.stride !== undefined) actor.stride += step / room.scale;
+  actor.running = false;
+  actor.facing = Math.atan2(dy, dx);
+  actor.moveDx = Math.abs(dx) > Math.abs(dy) * 0.6 ? Math.sign(dx) : 0;
+  actor.moveDy = Math.sign(dy);
+  return false;
+}
+
+function frontDoor() {
+  return ROOMS.apartment.doors.find((d) => d.menu);
+}
+
+function startOuting() {
+  const door = frontDoor();
+  if (together.mode) endTogether();
+  if (partner.room !== 'apartment') {
+    // Coming out of the bedroom to go with you
+    partner.room = 'apartment';
+    partner.seat = null;
+    partner.x = 772;
+    partner.y = 300;
+  }
+  partnerStandUp();
+  const mine = { x: door.x - 26, y: door.y - 38 };
+  const theirs = { x: door.x + 26, y: door.y - 38 };
+  outing.path = findRoute({ x: player.x, y: player.y }, mine) ?? [mine];
+  partner.path = findRoute({ x: partner.x, y: partner.y }, theirs) ?? [theirs];
+  partner.spot = null;
+  // Dude goes and sits just inside to watch you go
+  if (dog.state === 'couch' || dog.hop) {
+    dog.hop = null;
+    dog.x = player.x;
+    dog.y = player.y + 10;
+  }
+  dog.state = 'stay';
+  dog.target = { x: door.x, y: door.y - 150 };
+  trail.length = 0;
+  outing.phase = 'gather';
+  outing.t = 0;
+}
+
+function updateOuting(dt) {
+  outing.t += dt;
+  if (outing.phase === 'gather') {
+    const a = followPath(player, outing.path, dt);
+    const b = followPath(partner, partner.path, dt);
+    if ((a && b) || outing.t > 9) {
+      const door = frontDoor();
+      player.x = door.x - 26;
+      player.y = door.y - 38;
+      partner.x = door.x + 26;
+      partner.y = door.y - 38;
+      player.walkTime = partner.walkTime = 0;
+      player.facing = -Math.PI / 2; // looking back at Dude
+      partner.facing = -Math.PI / 2;
+      outing.phase = 'bye';
+      sayLines(talkLines([
+        ['me', [`Be good, ${DOG}! We'll be right back.`, `Guard the house, ${DOG}.`]],
+        ['you', ["Don't eat the couch while we're gone.", `Bye ${DOG}! Love you!`, "Aw, look at him. We'll be quick, buddy."]],
+      ]), () => {
+        outing.phase = 'leave';
+        outing.t = 0;
+        outing.path = [{ x: player.x, y: player.y + 90 }];
+        partner.path = [{ x: partner.x, y: partner.y + 90 }];
+      });
+    }
+  } else if (outing.phase === 'leave') {
+    // Out the door together
+    followPath(player, outing.path, dt);
+    followPath(partner, partner.path, dt);
+    if (outing.t > 0.55 && !fade.door) {
+      fade.door = { fn: enterStore };
+      fade.t = 0;
+    }
+  } else if (outing.phase === 'enter') {
+    // Walking in through the store's front doors, hand in hand
+    followPath(player, outing.path, dt);
+    player.walkTime = outing.path.length ? player.walkTime : 0;
+    partner.x = player.x;
+    partner.y = player.y;
+    if (!outing.path.length) {
+      outing.phase = null;
+      shop.active = true;
+      shop.hintT = 6;
+    }
+  }
+}
+
+function newShoppingList() {
+  const forDude = STORE_ITEMS.find((i) => i.id === 'toy');
+  const rest = STORE_ITEMS.filter((i) => i !== forDude).sort(() => Math.random() - 0.5).slice(0, 4);
+  return [forDude, ...rest].map((i) => ({ ...i, got: false }));
+}
+
+function enterStore() {
+  outing.phase = 'enter';
+  outing.t = 0;
+  room = ROOMS['store-bc'];
+  player.seat = null;
+  player.x = STORE_DOORWAY.x;
+  player.y = STORE_DOORWAY.y;
+  outing.path = [{ x: STORE_DOORWAY.x, y: 872 }];
+  partner.room = room.id;
+  startTogether('hands');
+  player.facing = -Math.PI / 2;
+  // Dude stays home, curled up by the door
+  dog.state = 'home';
+  dog.x = frontDoor().x;
+  dog.y = frontDoor().y - 150;
+  hearts.length = 0;
+  trail.length = 0;
+  shop.list = newShoppingList();
+  shop.paid = false;
+  shop.t = 0;
+  shop.receipt = null;
+  shop.popups = [];
+  resize();
+  cam.snap = true;
+}
+
+function goHome() {
+  const gotToy = shop.list.some((i) => i.id === 'toy' && i.got);
+  shop.active = false;
+  shop.receipt = null;
+  together.mode = null;
+  room = ROOMS.apartment;
+  const door = frontDoor();
+  player.x = door.x - 26;
+  player.y = door.spawn.y - 20;
+  player.facing = -Math.PI / 2;
+  player.walkTime = 0;
+  player.nearHim = true;
+  Object.assign(partner, {
+    room: 'apartment', x: door.x + 26, y: door.spawn.y - 20, facing: -Math.PI / 2, seat: null, path: [], spot: null,
+    stay: 6, greeted: true, walkTime: 0, idleTime: 0,
+  });
+  // Dude runs up to say hi
+  dog.state = 'follow';
+  dog.hop = null;
+  dog.x = door.x;
+  dog.y = door.y - 110;
+  dog.idleTime = 0;
+  trail.length = 0;
+  exciteDog();
+  for (let i = 0; i < 6; i++) addHeart(dog.x + (i - 2.5) * 10, dog.y - 70, i % 2 === 0);
+  resize();
+  cam.snap = true;
+  sayLines(talkLines(gotToy
+    ? [['you', `${DOG}! We're home! Look what we got you!`], ['me', 'He is LOSING it.'], ['you', 'Best. Trip. Ever.']]
+    : [['me', `We're home, ${DOG}!`], ['you', 'Aw, he waited by the door the whole time.']]));
+}
+
+// ---- In the store ----
+
+function nearItem() {
+  if (!shop.active || shop.paid) return null;
+  return shop.list.find((i) => !i.got && i.room === room.key && Math.hypot(player.x - i.x, player.y - i.y) < ITEM_RANGE) ?? null;
+}
+
+function nearRegister() {
+  if (!shop.active || shop.paid) return null;
+  return (STORE_REGISTERS[room.key] ?? []).find(([x, y]) => Math.hypot(player.x - x, player.y - y) < ITEM_RANGE) ?? null;
+}
+
+function grabItem(item) {
+  item.got = true;
+  player.cheer = 0.6;
+  shop.popups.push({ text: '+ ' + item.name, x: item.x, y: item.y - 120, t: 0 });
+  shop.popups.push({ text: pick(STORE_COMMENTS), x: player.x + 30, y: player.y - 150, t: -0.35, talk: true });
+  if (shop.list.every((i) => i.got)) {
+    shop.hintT = 5;
+    if (!shop.best || shop.t < shop.best) {
+      shop.best = Math.round(shop.t);
+      saveCount('storeBest', shop.best);
+      shop.record = true;
+    }
+  }
+}
+
+function payAtRegister() {
+  const got = shop.list.filter((i) => i.got);
+  if (!got.length) {
+    sayLines(talkLines([['you', "We haven't grabbed anything yet! The list's up in the corner."]]));
+  } else if (got.length < shop.list.length) {
+    dialogue.active = true;
+    playTalkNode('store_missing');
+  } else {
+    storePay();
+  }
+}
+
+function storePay() {
+  const items = shop.list.filter((i) => i.got);
+  shop.paid = true;
+  shop.receipt = { items, total: items.reduce((s, i) => s + i.price, 0), time: shop.t, t: 0 };
+}
+
+function updateStore(dt) {
+  if (!room.store || fade.door) return;
+  if (!shop.paid && !dialogue.active) shop.t += dt;
+  shop.hintT = Math.max(0, (shop.hintT ?? 0) - dt);
+  if (shop.receipt) shop.receipt.t += dt;
+  for (let i = shop.popups.length - 1; i >= 0; i--) {
+    shop.popups[i].t += dt;
+    if (shop.popups[i].t > 1.6) shop.popups.splice(i, 1);
+  }
+  // Out the front doors
+  if (inExit(room, player.x, player.y) && player.y > STORE_EXIT.y + 120 && canLeaveStore()) {
+    fade.door = { fn: goHome };
+    fade.t = 0;
+    return;
+  }
+  // Off an edge into the next part of the store
+  let dir = null;
+  if (player.x < STORE_EDGE) dir = 'left';
+  else if (player.x > room.w - STORE_EDGE) dir = 'right';
+  else if (player.y < STORE_EDGE) dir = 'up';
+  else if (player.y > room.h - STORE_EDGE && !inExit(room, player.x, player.y)) dir = 'down';
+  if (dir && room.next[dir]) crossStore(dir);
+}
+
+// Where you'd be on the store map, carried over into the next part.
+function crossStore(dir) {
+  const from = room;
+  const to = ROOMS['store-' + from.next[dir]];
+  const ox = from.map[0] + player.x * from.map[2];
+  const oy = from.map[1] + player.y * from.map[3];
+  let x = (ox - to.map[0]) / to.map[2];
+  let y = (oy - to.map[1]) / to.map[3];
+  const IN = STORE_EDGE + 30;
+  if (dir === 'left') x = to.w - IN;
+  if (dir === 'right') x = IN;
+  if (dir === 'up') y = to.h - IN;
+  if (dir === 'down') y = IN;
+  const r = PLAYER_RADIUS * to.scale + 4;
+  // Nearest free spot along the edge you came in from
+  let spot = null;
+  for (let d = 0; d < 700 && !spot; d += 6) {
+    for (const s of [d, -d]) {
+      const sx = dir === 'left' || dir === 'right' ? x : Math.min(to.w - IN, Math.max(IN, x + s));
+      const sy = dir === 'up' || dir === 'down' ? y : Math.min(to.h - IN, Math.max(IN, y + s));
+      if (storeFreeIn(to, sx, sy, r)) {
+        spot = { x: sx, y: sy };
+        break;
+      }
+    }
+  }
+  if (!spot) return;
+  player.walkTime = 0;
+  fade.door = {
+    fn: () => {
+      room = to;
+      player.x = spot.x;
+      player.y = spot.y;
+      partner.x = spot.x;
+      partner.y = spot.y;
+      partner.room = room.id;
+      shop.popups = [];
+      resize();
+      cam.snap = true;
+    },
+  };
+  fade.t = 0;
+}
+
+function storeBanner() {
+  if (shop.receipt) return ['', false];
+  if (outing.phase === 'enter') return ['Welcome to Walmart!', false];
+  if (room.key === 'bc' && player.y > 800 && player.x > 450 && player.x < 830 && !canLeaveStore()) {
+    return ['Pay at a register before you leave', true];
+  }
+  if (shop.paid) return ['All paid! Head out the front doors to go home', false];
+  if (shop.hintT > 0 && shop.list.every((i) => i.got)) return ['Got everything! Pay at a register at the front', false];
+  if (shop.hintT > 0) return ['Find everything on the list. The map shows where!', false];
+  return ['', false];
+}
+
+// Sparkles over the things on your list, and the little "+ Bananas" popups.
+function drawStoreWorld() {
+  if (!room.store || !shop.active) return;
+  const s = room.scale;
+  const now = performance.now() / 1000;
+  for (const i of shop.list) {
+    if (i.got || i.room !== room.key) continue;
+    const bob = Math.sin(now * 3 + i.x) * 4;
+    drawSparkle(i.x, i.y - 95 * s + bob, 7 * s, now);
+    if (Math.hypot(player.x - i.x, player.y - i.y) < 260) {
+      ctx.font = `600 ${Math.round(13 * s * 1.6)}px ${PIXEL_FONT}`;
+      pill(i.name, i.x, i.y - 120 * s + bob, 'rgba(15, 40, 100, 0.9)', '#fff');
+    }
+  }
+  if (!shop.paid) {
+    for (const [x, y] of STORE_REGISTERS[room.key] ?? []) {
+      if (Math.hypot(player.x - x, player.y - y) > 300 || !shop.list.some((i) => i.got)) continue;
+      ctx.font = `600 ${Math.round(12 * s * 1.6)}px ${PIXEL_FONT}`;
+      pill('PAY', x, y - 70 * s + Math.sin(now * 3) * 3, 'rgba(255, 196, 32, 0.95)', '#1c2a5a');
+    }
+  }
+  for (const p of shop.popups) {
+    if (p.t < 0) continue;
+    const a = Math.min(1, (1.6 - p.t) / 0.5);
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.font = `700 ${Math.round(14 * s * 1.6)}px ${PIXEL_FONT}`;
+    pill(p.text, p.x, p.y - p.t * 30, p.talk ? 'rgba(251, 247, 239, 0.95)' : 'rgba(255, 196, 32, 0.95)', p.talk ? '#2a1f1a' : '#1c2a5a');
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawSparkle(x, y, k, t) {
+  const spin = 1 + Math.sin(t * 6) * 0.25;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#3b2a00';
+  ctx.fillRect(-k * 1.2, -k * 4.2 * spin, k * 2.4, k * 8.4 * spin);
+  ctx.fillRect(-k * 4.2 * spin, -k * 1.2, k * 8.4 * spin, k * 2.4);
+  ctx.fillStyle = '#ffd23a';
+  ctx.fillRect(-k * 0.7, -k * 3.6 * spin, k * 1.4, k * 7.2 * spin);
+  ctx.fillRect(-k * 3.6 * spin, -k * 0.7, k * 7.2 * spin, k * 1.4);
+  ctx.fillStyle = '#fff6c4';
+  ctx.fillRect(-k * 0.7, -k * 0.7, k * 1.4, k * 1.4);
+  ctx.restore();
+}
+
+// Shopping list (top left), mini map (top right) and the receipt.
+function drawStoreHud() {
+  if (!room.store || !shop.active) return;
+  const small = viewW < 560;
+  // List
+  const rowH = small ? 15 : 18;
+  const lw = small ? 150 : 200;
+  const lh = 34 + shop.list.length * rowH + 18;
+  const lx = 10;
+  const ly = 52;
+  ctx.fillStyle = 'rgba(251, 247, 239, 0.94)';
+  ctx.fillRect(lx, ly, lw, lh);
+  ctx.strokeStyle = '#1c2a5a';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(lx, ly, lw, lh);
+  ctx.fillStyle = '#0f3c8c';
+  ctx.fillRect(lx, ly, lw, 24);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.font = `700 ${small ? 11 : 13}px ${PIXEL_FONT}`;
+  ctx.fillText('SHOPPING LIST', lx + 8, ly + 12);
+  shop.list.forEach((i, n) => {
+    const y = ly + 36 + n * rowH;
+    ctx.strokeStyle = '#1c2a5a';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(lx + 8, y - 5, 10, 10);
+    if (i.got) {
+      ctx.fillStyle = '#2e8b3a';
+      ctx.fillRect(lx + 10, y - 3, 6, 6);
+    }
+    ctx.fillStyle = i.got ? '#8a8378' : '#2a1f1a';
+    ctx.font = `600 ${small ? 10 : 12}px ${PIXEL_FONT}`;
+    ctx.fillText(i.name, lx + 24, y + 1, lw - 30);
+    if (i.got) ctx.fillRect(lx + 24, y + 1, Math.min(lw - 30, ctx.measureText(i.name).width), 1.5);
+  });
+  const secs = Math.floor(shop.t);
+  ctx.fillStyle = '#5b4a3a';
+  ctx.font = `600 ${small ? 9 : 11}px ${PIXEL_FONT}`;
+  ctx.fillText(`TIME ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` + (shop.best ? `   BEST ${Math.floor(shop.best / 60)}:${String(shop.best % 60).padStart(2, '0')}` : ''), lx + 8, ly + lh - 10);
+
+  // Mini map
+  if (spriteReady(storeMapImg)) {
+    const mw = small ? 130 : 220;
+    const k = mw / storeMapImg.naturalWidth;
+    const mh = storeMapImg.naturalHeight * k;
+    const mx = viewW - mw - 10;
+    const my = 52;
+    ctx.globalAlpha = 0.92;
+    ctx.drawImage(storeMapImg, mx, my, mw, mh);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#1c2a5a';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(mx, my, mw, mh);
+    const toMap = (rm, x, y) => [mx + (rm.map[0] + x * rm.map[2]) * k, my + (rm.map[1] + y * rm.map[3]) * k];
+    const t = performance.now() / 1000;
+    for (const i of shop.list) {
+      if (i.got) continue;
+      const [x, y] = toMap(ROOMS['store-' + i.room], i.x, i.y);
+      ctx.fillStyle = Math.sin(t * 6) > 0 ? '#ffd23a' : '#ff9f1a';
+      ctx.fillRect(x - 3, y - 3, 6, 6);
+      ctx.strokeStyle = '#3b2a00';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - 3, y - 3, 6, 6);
+    }
+    const [px, py] = toMap(room, player.x, player.y);
+    ctx.fillStyle = '#ff3b6b';
+    ctx.beginPath();
+    ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(15, 60, 140, 0.92)';
+    ctx.fillRect(mx, my + mh, mw, 18);
+    ctx.fillStyle = '#fff';
+    ctx.font = `600 ${small ? 9 : 11}px ${PIXEL_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.fillText(room.name.toUpperCase(), mx + mw / 2, my + mh + 9);
+  }
+  ctx.textAlign = 'center';
+  drawReceipt();
+}
+
+function drawReceipt() {
+  const r = shop.receipt;
+  if (!r) return;
+  const w = Math.min(280, viewW - 40);
+  const rowH = 18;
+  const h = 120 + r.items.length * rowH + (shop.record ? 18 : 0);
+  const x = (viewW - w) / 2;
+  const slide = Math.min(1, r.t / 0.4);
+  const y = (viewH - h) / 2 - 30 + (1 - slide) * 60;
+  ctx.globalAlpha = slide;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.fillRect(x + 6, y + 8, w, h);
+  ctx.fillStyle = '#fbf9f2';
+  ctx.fillRect(x, y, w, h);
+  // Torn bottom edge
+  ctx.fillStyle = '#fbf9f2';
+  for (let i = 0; i < w; i += 10) ctx.fillRect(x + i, y + h, 5, 5);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#0f3c8c';
+  ctx.font = `700 16px ${PIXEL_FONT}`;
+  ctx.fillText('WALMART', viewW / 2, y + 20);
+  ctx.fillStyle = '#5b4a3a';
+  ctx.font = `600 11px ${PIXEL_FONT}`;
+  ctx.fillText(`${NAMES.her} & ${NAMES.him}`, viewW / 2, y + 38);
+  ctx.textAlign = 'left';
+  ctx.font = `600 12px ${PIXEL_FONT}`;
+  r.items.forEach((i, n) => {
+    const yy = y + 60 + n * rowH;
+    ctx.fillStyle = '#2a1f1a';
+    ctx.fillText(i.name, x + 16, yy, w - 90);
+    ctx.textAlign = 'right';
+    ctx.fillText('$' + i.price.toFixed(2), x + w - 16, yy);
+    ctx.textAlign = 'left';
+  });
+  const ty = y + 60 + r.items.length * rowH + 6;
+  ctx.fillStyle = '#2a1f1a';
+  ctx.fillRect(x + 16, ty - 8, w - 32, 1.5);
+  ctx.font = `700 13px ${PIXEL_FONT}`;
+  ctx.fillText('TOTAL', x + 16, ty + 6);
+  ctx.textAlign = 'right';
+  ctx.fillText('$' + r.total.toFixed(2), x + w - 16, ty + 6);
+  ctx.textAlign = 'center';
+  ctx.font = `600 11px ${PIXEL_FONT}`;
+  ctx.fillStyle = '#5b4a3a';
+  const secs = Math.round(r.time);
+  ctx.fillText(`Shopping time ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, viewW / 2, ty + 26);
+  if (shop.record) {
+    ctx.fillStyle = '#c0392b';
+    ctx.fillText('NEW BEST TIME!', viewW / 2, ty + 44);
+  }
+  ctx.fillStyle = '#0f3c8c';
+  ctx.fillText(isTouch ? 'Tap OK' : 'Press E', viewW / 2, y + h - 14);
+  ctx.globalAlpha = 1;
+}
+
 // ---- Update --------------------------------------------------------------
 
 function update(dt) {
   updateFade(dt);
-  updateWalk(dt);
   updateCamera(dt);
   if (fade.door) {
     player.walkTime = 0; // hold still while the screen fades
+    updateActionButton();
+    return;
+  }
+  if (outing.phase) {
+    // Leaving for (or walking into) the store: nobody's steering
+    if (dialogue.active) updateDialogue(dt);
+    else updateOuting(dt);
+    updateDog(dt);
     updateActionButton();
     return;
   }
@@ -3260,6 +3848,7 @@ function update(dt) {
   updateCuddle(dt);
   updateSelfie(dt);
   updateYard(dt);
+  updateStore(dt);
 }
 
 function updatePlayer(dt) {
@@ -3331,7 +3920,7 @@ function resize() {
   viewH = box.clientHeight;
   // Zoom in, but never so far out that the room leaves empty margins on both axes.
   const fit = Math.min(viewW / room.w, viewH / room.h);
-  scale = Math.max(fit, Math.min(viewW, viewH) / (VIEW_SPAN * room.scale));
+  scale = Math.max(fit, Math.min(viewW, viewH) / ((room.viewSpan ?? VIEW_SPAN) * room.scale));
   canvas.style.width = viewW + 'px';
   canvas.style.height = viewH + 'px';
   canvas.width = Math.floor(viewW * dpr);
@@ -3762,13 +4351,19 @@ function drawHud() {
   // Stack above the "talk" hint when that's showing too
   const sy = toScreenY(anchor.y - headTop) - (canKiss() && partner.room === room.id ? 28 : 0);
 
-  if (nearestDoor() && !fade.door) {
+  if (room.store && !fade.door && !dialogue.active && !shop.receipt && (nearItem() || nearRegister())) {
+    ctx.font = `600 12px ${PIXEL_FONT}`;
+    const what = nearItem() ? `grab the ${nearItem().name.toLowerCase()}` : 'pay';
+    pill(isTouch ? `Tap ${nearItem() ? 'GRAB' : 'PAY'} to ${what}` : `Press E to ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
+  } else if (outing.phase) {
+    // no prompts while you're heading out
+  } else if (nearestDoor() && !fade.door) {
     const door = nearestDoor();
-    ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    ctx.font = '600 12px "Pixelify Sans", ui-monospace, monospace';
     const text = isTouch ? `Tap ${door.label} to ${door.prompt}` : `Press E to ${door.prompt}`;
     pill(text, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   } else if (!player.seat && !together.mode && nearestSeat()) {
-    ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    ctx.font = '600 12px "Pixelify Sans", ui-monospace, monospace';
     const what = gamesHere() ? 'play video games' : 'read';
     pill(isTouch ? `Tap SIT to ${what}` : `Press E to sit and ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
@@ -3776,13 +4371,14 @@ function drawHud() {
   drawCuddleHud();
   drawTogetherHud();
   if (!player.seat && (nearPoop() || nearBin())) {
-    ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+    ctx.font = '600 12px "Pixelify Sans", ui-monospace, monospace';
     const what = nearPoop() ? 'pick up the poop' : 'throw it in the bin';
     pill(isTouch ? `Tap ${nearPoop() ? 'PICK UP' : 'TRASH'} to ${what}` : `Press E to ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
   drawWalkBanner();
   drawBookOverlay();
   drawFFOverlay();
+  drawStoreHud();
   drawSelfie();
   drawDialogue();
   if (fade.door) {
@@ -3889,6 +4485,13 @@ function startHop(to, next) {
 function updateDog(dt) {
   dog.wagTime += dt;
   dog.excited = Math.max(0, dog.excited - dt);
+  if (dog.state === 'home') return; // waiting at home while you're out
+  if (dog.state === 'stay') {
+    // Watching you leave from just inside the door
+    if (dog.target && moveDogToward(dog.target.x, dog.target.y, DOG_MAX_SPEED * room.scale * 0.7, dt)) dog.target = null;
+    if (!dog.target) dog.walkTime = 0;
+    return;
+  }
   if (dog.state === 'leash') {
     updateLeashDog(dt);
     return;
@@ -3975,6 +4578,8 @@ function exciteDog() {
 // Which pose to show, and whether her head should point left.
 function dogPose() {
   if (dog.state === 'leash') return leashPose();
+  if (dog.state === 'home') return { name: 'lie', left: false };
+  if (dog.state === 'stay' && dog.walkTime <= 0) return { name: 'front' };
   if (dog.hop) return { name: 'walk4', left: dog.flip };
   if (dog.state === 'couch') {
     return { name: dog.couchTime > DOG_COUCH_SLEEP_AFTER ? 'sleep' : 'lie', left: dog.flip };
@@ -4004,7 +4609,7 @@ function dogPose() {
 
 
 function drawDog() {
-  if (!spriteReady(dogImg)) return;
+  if (!spriteReady(dogImg) || room.store) return;
   const pose = dogPose();
   const f = DOG_FRAMES[pose.name];
   const [fx, fy, fw, fh] = f.r;
@@ -4200,7 +4805,7 @@ function drawKissHud() {
   if (!nearPartner()) return;
   const sx = toScreenX(partner.x);
   const sy = toScreenY(partner.y - poseHeight(partner.who, partnerPose()) - 6);
-  ctx.font = '600 12px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+  ctx.font = '600 12px "Pixelify Sans", ui-monospace, monospace';
   pill(isTouch ? 'Tap TALK to chat' : 'Press T to talk', sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
 }
 
@@ -4247,6 +4852,7 @@ function render() {
   if (room.id === 'apartment') drawTv();
   drawYardGround();
   drawActors();
+  drawStoreWorld();
   drawYardAir();
   drawHearts();
   if (showHitboxes) drawHitboxes();

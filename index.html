@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Living Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&display=swap" rel="stylesheet">
   <meta name="claude:viewport-fit-sides" content="cover">
   <style>
     /* One-screen game: map fills the space, touch controls sit underneath (or float in landscape). */
@@ -16,7 +19,7 @@
       --pad-active: rgba(255, 244, 225, 0.32);
       --accent: #d98c4a;
       --talk: #e68aa8;
-      --font-ui: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+      --font-ui: "Pixelify Sans", ui-monospace, monospace;
       color-scheme: dark;
     }
     html, body { height: 100%; }
@@ -123,7 +126,7 @@
 </head>
 <body>
   <div id="help">
-    <span class="keys">Move: Arrows / WASD &middot; Run: Shift &middot; Talk: T &middot; Sit, read, doors, dog walks: E or Space &middot; Hitboxes: H</span>
+    <span class="keys">Move: Arrows / WASD &middot; Run: Shift &middot; Talk: T &middot; Sit, read, doors, walks, Walmart: E or Space &middot; Hitboxes: H</span>
     <span class="touch">Hold the arrows to walk &middot; tap RUN to speed up &middot; walk to the couch to read</span>
   </div>
   <div id="game"><canvas id="canvas"></canvas></div>
@@ -136,6 +139,7 @@
     <button class="talk" id="talk" disabled>TALK</button>
     <button class="action" id="action" disabled></button>
   </div>
+  <script src="store-data.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
