@@ -277,6 +277,7 @@ window.addEventListener('keydown', (e) => {
       } else if (['KeyJ', 'KeyE', 'Enter'].includes(e.code)) fightPress('punch');
       else if (['KeyK', 'KeyT', 'KeyX'].includes(e.code)) fightPress('kick');
       else if (['KeyI', 'KeyQ'].includes(e.code)) fightPress('special');
+      else if (['KeyL', 'ShiftLeft', 'ShiftRight'].includes(e.code)) fightPress('block');
     }
     keys.add(e.code);
     return;
@@ -339,6 +340,7 @@ runBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (fight.active) {
     fight.blockHeld = true; // it's the BLOCK button in a fight
+    fightPress('block');
     return;
   }
   if (ff.active) {
@@ -4085,28 +4087,40 @@ function drawReceipt() {
 // off in the Walmart parking lot at sunset, Street Fighter style. You play
 // whoever you are right now; the other one fights back (easy, normal or hard,
 // picked in the chat). Best of three rounds, 60 seconds each.
-// Keys: arrows / WASD move, Up or Space jump, Down crouch, J or E punch, K or T
-// kick, L or Shift block, I or Q special (or Down + punch) once the meter is
-// full, Esc to give up. Touch: the pad, PUNCH, KICK, and BLOCK (the RUN button).
+// Keys: arrows / WASD move, Up or Space jump, Down crouch, J or E punch (jab;
+// toward them + punch dashes in, Down + punch uppercuts), K or T kick (toward
+// + kick spin kicks, Down + kick leg sweeps), L or Shift block (away + block
+// dodges back), I or Q (or block + punch) special once the meter is full, Esc
+// to give up. Touch: the pad, PUNCH, KICK, and BLOCK (the RUN button).
+// Light hits make them flinch; heavy ones (uppercut, spin kick, sweep, special)
+// knock them down and they get back up. The loser of the match kneels in defeat.
 // Sprites: assets/fight-him.png and assets/fight-her.png, cut from the move
 // sheets; both face right in the art and are mirrored to face left.
 
-const FIGHT_FRAMES = {"him":{"idle":[[0,0,80,161,39],[82,0,74,160,36],[158,0,75,159,36],[235,0,73,165,37],[310,0,81,159,40],[393,0,78,163,38],[473,0,79,165,38]],"walkF":[[554,0,91,160,45],[647,0,92,160,46],[741,0,89,164,44],[832,0,95,163,47],[929,0,97,163,49],[1028,0,95,163,48]],"walkB":[[1125,0,87,158,43],[1214,0,86,157,42],[1302,0,82,157,40],[1386,0,91,158,46],[1479,0,91,158,47],[1572,0,90,158,44],[1664,0,86,158,46]],"punch":[[1752,0,111,156,55],[1865,0,146,156,56],[0,167,130,156,58],[132,167,176,157,68]],"kick":[[310,167,104,154,51],[416,167,116,150,44],[534,167,131,160,48],[667,167,133,159,46]],"crouch":[[802,167,90,149,44],[894,167,92,103,43],[988,167,90,107,44]],"jump":[[1080,167,95,144,30],[1177,167,97,136,35],[1276,167,90,145,11],[1368,167,125,103,64]],"block":[[1495,167,86,143,43],[1583,167,85,143,41],[1670,167,84,143,41]],"hurt":[[1756,167,100,141,57],[1858,167,95,139,52],[1955,167,76,113,35]],"special":[[0,329,77,152,37],[79,329,96,130,46],[177,329,111,133,50],[290,329,139,159,65],[431,329,174,145,52],[607,329,178,150,55]],"victory":[[787,329,79,154,38],[868,329,84,153,41],[954,329,133,156,69],[1089,329,89,156,41]]},"her":{"idle":[[0,0,77,200,38],[79,0,74,200,38],[155,0,74,200,37],[231,0,74,201,37],[307,0,76,200,39],[385,0,82,201,40]],"walkF":[[469,0,75,200,38],[546,0,76,200,39],[624,0,86,201,44],[712,0,72,200,36],[786,0,76,200,37],[864,0,89,200,41]],"walkB":[[955,0,73,200,37],[1030,0,78,200,38],[1110,0,73,200,36],[1185,0,80,200,37],[1267,0,74,200,36],[1343,0,72,199,35]],"punch":[[1417,0,107,185,52],[1526,0,123,185,54],[1651,0,115,182,56],[1768,0,123,184,54]],"kick":[[1893,0,111,192,56],[0,203,136,192,39],[138,203,172,193,58],[312,203,98,188,16]],"crouch":[[412,203,101,144,52],[515,203,114,130,52],[631,203,106,114,52]],"jump":[[739,203,107,123,50],[848,203,102,147,33],[952,203,100,161,42],[1054,203,99,140,48]],"block":[[1155,203,116,182,57],[1273,203,115,181,60],[1390,203,120,182,61]],"hurt":[[1512,203,161,169,104],[1675,203,147,168,92],[1824,203,115,141,52]],"special":[[0,398,112,184,56],[114,398,123,186,66],[239,398,235,185,83],[476,398,243,206,90],[721,398,139,173,73],[862,398,116,180,57]],"victory":[[980,398,76,192,44],[1058,398,95,205,49],[1155,398,127,213,61],[1284,398,85,193,45]]}};
+const FIGHT_FRAMES = {"him":{"idle":[[0,0,64,132,30],[66,0,67,133,33],[135,0,63,134,31],[200,0,65,134,32],[267,0,64,134,31],[333,0,65,134,32]],"walkF":[[400,0,76,132,38],[478,0,67,131,33],[547,0,76,131,38],[625,0,72,130,36],[699,0,81,134,37],[782,0,80,134,37]],"walkB":[[864,0,71,130,35],[937,0,65,130,29],[1004,0,74,128,35],[1080,0,66,126,32],[1148,0,71,129,34],[1221,0,65,130,33]],"jab":[[1288,0,76,124,37],[1366,0,78,123,38],[1446,0,90,123,38],[1538,0,97,123,40]],"kick":[[1637,0,85,123,43],[1724,0,77,124,29],[1803,0,89,123,43],[1894,0,78,125,39]],"uppercut":[[0,136,75,103,36],[77,136,78,118,38],[157,136,69,126,34],[228,136,81,130,40]],"spin":[[311,136,86,118,45],[399,136,112,120,55],[513,136,110,119,55],[625,136,82,124,58]],"dash":[[709,136,95,105,20],[806,136,97,105,22],[905,136,104,106,39],[1011,136,92,107,32]],"sweep":[[1105,136,112,104,68],[1219,136,122,99,55],[1343,136,138,67,78]],"jump":[[1483,136,84,111,12],[1569,136,83,90,20],[1654,136,73,93,39],[1729,136,91,76,50]],"crouch":[[1822,136,78,92,36],[1902,136,78,79,36],[1982,136,62,70,30]],"block":[[0,268,77,117,37],[79,268,77,114,37],[158,268,73,115,36]],"dodge":[[233,268,91,116,33],[326,268,87,110,44],[415,268,96,115,53],[513,268,98,116,56]],"hitLight":[[613,268,88,113,43],[703,268,86,109,48],[791,268,90,104,55]],"hitHeavy":[[883,268,111,107,68],[996,268,115,108,75],[1113,268,99,90,59],[1214,268,105,82,78]],"knockdown":[[1321,268,128,74,75],[1451,268,141,47,75],[1594,268,140,39,61]],"getup":[[1736,268,86,69,44],[1824,268,83,71,38],[1909,268,90,94,37],[0,387,59,104,29]],"special":[[61,387,101,128,46],[164,387,101,125,45],[267,387,106,124,47],[375,387,123,120,56],[500,387,146,127,51],[648,387,142,127,54]],"victory":[[792,387,63,134,31],[857,387,66,134,33],[925,387,66,129,33],[993,387,72,133,33]],"defeat":[[1067,387,81,77,38],[1150,387,85,69,42],[1237,387,102,52,54]]},"her":{"idle":[[0,0,67,151,32],[69,0,61,150,32],[132,0,57,151,30],[191,0,60,152,30],[253,0,60,154,30],[315,0,64,154,31]],"walkF":[[381,0,75,148,37],[458,0,75,146,38],[535,0,68,147,34],[605,0,123,150,49],[730,0,88,149,38],[820,0,69,151,35]],"walkB":[[891,0,78,148,39],[971,0,72,149,37],[1045,0,79,149,39],[1126,0,62,151,32],[1190,0,70,151,34],[1262,0,73,145,37]],"jab":[[1337,0,78,135,38],[1417,0,79,133,40],[1498,0,82,133,40],[1582,0,90,136,44]],"kick":[[1674,0,92,134,45],[1768,0,85,132,34],[1855,0,104,133,38],[0,156,89,131,45]],"uppercut":[[91,156,74,126,38],[167,156,76,125,38],[245,156,78,137,41],[325,156,79,144,39]],"spin":[[406,156,81,127,41],[489,156,73,136,46],[564,156,76,134,48],[642,156,86,135,58]],"dash":[[730,156,93,110,57],[825,156,89,114,31],[916,156,93,116,38],[1011,156,93,116,23]],"sweep":[[1106,156,107,98,50],[1215,156,138,91,48],[1355,156,102,88,47]],"jump":[[1459,156,88,115,8],[1549,156,72,119,13],[1623,156,68,100,32],[1693,156,73,101,35]],"crouch":[[1768,156,69,103,35],[1839,156,62,84,36],[1903,156,64,83,36]],"block":[[1969,156,68,126,36],[0,302,69,124,33],[71,302,70,122,35]],"dodge":[[143,302,91,123,30],[236,302,78,124,33],[316,302,90,115,51],[408,302,86,120,43]],"hitLight":[[496,302,88,119,45],[586,302,107,118,53],[695,302,103,117,65]],"hitHeavy":[[800,302,99,112,66],[901,302,110,114,68],[1013,302,85,89,61],[1100,302,117,84,42]],"knockdown":[[1219,302,124,78,76],[1345,302,140,50,54],[1487,302,140,40,47]],"getup":[[1629,302,104,74,51],[1735,302,78,71,27],[1815,302,84,83,37],[1901,302,65,104,37]],"special":[[0,428,94,110,43],[96,428,96,110,42],[194,428,98,119,44],[294,428,110,109,45],[406,428,139,124,61],[547,428,138,124,53]],"victory":[[687,428,55,126,28],[744,428,64,125,28],[810,428,65,125,30],[877,428,78,124,34]],"defeat":[[957,428,76,84,40],[1035,428,82,76,40],[1119,428,78,91,38]]}};
 const fightImgs = { him: loadImage('assets/fight-him.png'), her: loadImage('assets/fight-her.png') };
 const fightBg = loadImage('assets/fight-bg.jpg');
 const FW = 960; // the fight is drawn at this size, then scaled to the screen
 const FH = 540;
 const FLOOR = 498;
-const FIGHT_SCALE = { him: 1.3, her: 1.08 }; // sheet px to fight px: same height on screen
+const FIGHT_SCALE = { him: 1.55, her: 1.43 }; // sheet px to fight px: same height on screen
 const ROUND_TIME = 60;
 const FIGHT_SPEED = { walk: 190, back: 150, jump: 640, gravity: 1750 };
-// Moves: frames per second, which frames hit, reach, damage, knockback
+// Moves: animation speed, which frames can hit ('last' = the final frame),
+// reach, damage, knockback, 'light' (flinch) or 'heavy' (knocked down). high
+// attacks miss someone crouching, low ones miss someone in the air and can't be
+// blocked standing, anti ones reach up to hit jumpers. lunge moves them along.
 const MOVES = {
-  punch: { fps: 14, active: [1, 2], reach: 92, dmg: 6, push: 120, high: true },
-  kick: { fps: 11, active: [2], reach: 118, dmg: 9, push: 190 },
+  jab: { fps: 16, active: [2, 3], reach: 95, dmg: 5, push: 90, kind: 'light', high: true },
+  kick: { fps: 12, active: [2], reach: 122, dmg: 8, push: 150, kind: 'light' },
+  uppercut: { fps: 11, active: [1, 2], reach: 92, dmg: 11, push: 200, kind: 'heavy', anti: true },
+  spin: { fps: 11, active: [2], reach: 134, dmg: 12, push: 260, kind: 'heavy' },
+  dash: { fps: 14, active: [1, 2, 3], reach: 84, dmg: 9, push: 220, kind: 'light', lunge: 520 },
+  sweep: { fps: 10, active: ['last'], reach: 142, dmg: 9, push: 120, kind: 'heavy', low: true },
   special: { fps: 9 },
+  dodge: { fps: 12, lunge: -380 },
 };
-const SPECIAL_FIRE = { him: 4, her: 3 }; // frame the energy wave leaves the fist
+const SPECIAL_FIRE = { him: 4, her: 4 }; // frame the energy wave leaves the fist
 const DIFFICULTY = {
   easy: { think: 0.55, attack: 0.35, block: 0.15, special: 0.2 },
   normal: { think: 0.32, attack: 0.55, block: 0.4, special: 0.5 },
@@ -4177,7 +4191,7 @@ function fightHeld() {
 }
 
 function fightBusy(f) {
-  return ['punch', 'kick', 'special', 'hurt', 'ko', 'victory'].includes(f.state);
+  return !!MOVES[f.state] || ['hitLight', 'hitHeavy', 'down', 'getup', 'victory', 'defeat', 'land'].includes(f.state);
 }
 
 function setState(f, s) {
@@ -4187,37 +4201,45 @@ function setState(f, s) {
   f.hit = false;
 }
 
+function startMove(f, move) {
+  setState(f, move);
+  if (f.y <= 0) f.vx = 0;
+}
+
 // One fighter's moves for this frame: from you, or from the AI.
 function fighterControl(f, other, input, dt) {
-  const onGround = f.y <= 0;
-  if (f.state === 'hurt') {
+  if (f.state === 'hitLight') {
     f.stun -= dt;
     if (f.stun <= 0) setState(f, 'idle');
     return;
   }
   if (fightBusy(f)) return;
+  const onGround = f.y <= 0;
   if (onGround) f.facing = other.x > f.x ? 1 : -1;
+  const dir = input.right - input.left;
+  const forward = dir === f.facing;
   if (input.special && f.meter >= 100 && onGround) {
     f.meter = 0;
-    setState(f, 'special');
-    f.vx = 0;
+    startMove(f, 'special');
+    return;
+  }
+  if (input.dodge && onGround) {
+    startMove(f, 'dodge');
     return;
   }
   if (input.punch) {
-    setState(f, 'punch');
-    if (onGround) f.vx = 0;
+    startMove(f, !onGround ? 'jab' : input.down ? 'uppercut' : forward ? 'dash' : 'jab');
     return;
   }
   if (input.kick) {
-    setState(f, 'kick');
-    if (onGround) f.vx = 0;
+    startMove(f, !onGround ? 'kick' : input.down ? 'sweep' : forward ? 'spin' : 'kick');
     return;
   }
   if (!onGround) return;
   if (input.up) {
     f.vy = FIGHT_SPEED.jump;
     f.y = 0.01;
-    f.vx = (input.right - input.left) * FIGHT_SPEED.walk;
+    f.vx = dir * FIGHT_SPEED.walk;
     setState(f, 'jump');
     return;
   }
@@ -4231,9 +4253,7 @@ function fighterControl(f, other, input, dt) {
     setState(f, 'block');
     return;
   }
-  const dir = input.right - input.left;
   if (dir) {
-    const forward = dir === f.facing;
     f.vx = dir * (forward ? FIGHT_SPEED.walk : FIGHT_SPEED.back);
     setState(f, forward ? 'walkF' : 'walkB');
   } else {
@@ -4242,20 +4262,35 @@ function fighterControl(f, other, input, dt) {
   }
 }
 
-// The other one: walk in, swing, block now and then, throw the special when it's ready.
+// The other one: walk in, mix up jabs, kicks, sweeps and spin kicks, uppercut
+// you out of the air, block or dodge now and then, throw the special when ready.
 function fightAI(f, other, dt) {
   const lv = DIFFICULTY[fight.level];
   const ai = f.ai;
-  const input = { left: 0, right: 0, up: 0, down: 0, block: false, punch: false, kick: false, special: false };
+  const input = { left: 0, right: 0, up: 0, down: 0, block: false, punch: false, kick: false, special: false, dodge: false };
   const dist = Math.abs(other.x - f.x);
   const toward = other.x > f.x ? 'right' : 'left';
   const away = toward === 'right' ? 'left' : 'right';
-  // Blocking: seeing a swing or an energy wave coming
-  const threat = (['punch', 'kick'].includes(other.state) && dist < 150) || fight.shots.some((s) => s.owner !== f && Math.abs(s.x - f.x) < 220 && Math.sign(f.x - s.x) === s.dir);
-  if (threat && ai.blocking === undefined) ai.blocking = Math.random() < lv.block;
-  if (!threat) ai.blocking = undefined;
-  if (ai.blocking) {
+  const attacking = MOVES[other.state] && other.state !== 'special' && other.state !== 'dodge';
+  const threat = (attacking && dist < 170) || fight.shots.some((s) => s.owner !== f && Math.abs(s.x - f.x) < 220 && Math.sign(f.x - s.x) === s.dir);
+  if (threat && ai.react === undefined) {
+    const r = Math.random();
+    ai.react = r < lv.block ? 'block' : r < lv.block + lv.block * 0.4 ? 'dodge' : 'none';
+  }
+  if (!threat) ai.react = undefined;
+  if (ai.react === 'block') {
     input.block = true;
+    return input;
+  }
+  if (ai.react === 'dodge') {
+    ai.react = 'none';
+    input.dodge = true;
+    return input;
+  }
+  // Knock them out of the air
+  if (other.y > 40 && dist < 120 && Math.random() < lv.attack * dt * 8) {
+    input.down = 1;
+    input.punch = true;
     return input;
   }
   ai.next -= dt;
@@ -4263,29 +4298,41 @@ function fightAI(f, other, dt) {
     ai.next = lv.think * (0.6 + Math.random() * 0.8);
     const r = Math.random();
     if (f.meter >= 100 && dist > 220 && r < lv.special) ai.plan = 'special';
-    else if (dist < 120 && r < lv.attack) ai.plan = Math.random() < 0.55 ? 'punch' : 'kick';
+    else if (dist < 130 && r < lv.attack) ai.plan = pick(['jab', 'jab', 'kick', 'kick', 'sweep', 'spin', 'uppercut']);
+    else if (dist > 170 && dist < 320 && r < lv.attack * 0.5) ai.plan = 'dash';
     else if (dist < 90 && r < 0.6) ai.plan = 'back';
     else if (r < 0.08) ai.plan = 'jump';
-    else if (dist > 110) ai.plan = 'walk';
+    else if (dist > 115) ai.plan = 'walk';
     else ai.plan = Math.random() < 0.3 ? 'crouch' : 'wait';
     ai.hold = 0.25 + Math.random() * 0.4;
   }
   ai.hold -= dt;
+  const once = () => (ai.plan = null);
   switch (ai.plan) {
-    case 'special': input.special = true; ai.plan = null; break;
-    case 'punch': input.punch = true; ai.plan = null; break;
-    case 'kick': input.kick = true; ai.plan = null; break;
-    case 'jump': input.up = 1; input[toward] = 1; ai.plan = null; break;
-    case 'walk': if (dist > 105) input[toward] = 1; else ai.plan = null; break;
-    case 'back': input[away] = 1; if (ai.hold <= 0) ai.plan = null; break;
-    case 'crouch': input.down = 1; if (ai.hold <= 0) ai.plan = null; break;
+    case 'special': input.special = true; once(); break;
+    case 'jab': input.punch = true; once(); break;
+    case 'kick': input.kick = true; once(); break;
+    case 'sweep': input.down = 1; input.kick = true; once(); break;
+    case 'spin': input[toward] = 1; input.kick = true; once(); break;
+    case 'uppercut': input.down = 1; input.punch = true; once(); break;
+    case 'dash': input[toward] = 1; input.punch = true; once(); break;
+    case 'jump': input.up = 1; input[toward] = 1; once(); break;
+    case 'walk': if (dist > 110) input[toward] = 1; else once(); break;
+    case 'back': input[away] = 1; if (ai.hold <= 0) once(); break;
+    case 'crouch': input.down = 1; if (ai.hold <= 0) once(); break;
     default: break;
   }
   return input;
 }
 
-function fighterHurt(f, dmg, push, dir, blockable) {
-  if (blockable && f.state === 'block' && f.y <= 0) {
+// Can't be hit while knocked down, getting up, or early in a dodge.
+function fightInvulnerable(f) {
+  return ['hitHeavy', 'down', 'getup', 'defeat'].includes(f.state) || (f.state === 'dodge' && f.t < 0.28);
+}
+
+function fighterHurt(f, dmg, push, dir, kind, low) {
+  if (fightInvulnerable(f)) return 'miss';
+  if (f.state === 'block' && f.y <= 0 && !low) {
     f.hp = Math.max(0, f.hp - Math.round(dmg * 0.15));
     f.vx = dir * push * 0.5;
     f.meter = Math.min(100, f.meter + 6);
@@ -4293,12 +4340,23 @@ function fighterHurt(f, dmg, push, dir, blockable) {
   }
   f.hp = Math.max(0, f.hp - dmg);
   f.meter = Math.min(100, f.meter + 12);
-  f.vx = dir * push;
-  f.vy = f.y > 0 ? 200 : 0;
-  f.stun = 0.38;
-  setState(f, 'hurt');
   fight.shake = Math.min(10, dmg);
+  if (kind === 'heavy' || f.hp <= 0 || f.y > 0) {
+    knockDown(f, dir, push);
+  } else {
+    f.vx = dir * push;
+    f.stun = dmg >= 8 ? 0.42 : 0.3;
+    setState(f, 'hitLight');
+    f.t = 0; // a second jab restarts the flinch
+  }
   return 'hit';
+}
+
+function knockDown(f, dir, push) {
+  setState(f, 'hitHeavy');
+  f.vx = dir * Math.max(push, 180);
+  f.vy = 300;
+  f.y = Math.max(f.y, 0.01);
 }
 
 function addSparks(x, y, color, n = 9) {
@@ -4315,27 +4373,38 @@ function frameCount(f, anim) {
 
 function updateFighter(f, other, dt) {
   f.t += dt;
-  // Moves play through once
-  if (MOVES[f.state]) {
-    const mv = MOVES[f.state];
+  const mv = MOVES[f.state];
+  if (mv) {
     const n = frameCount(f, f.state);
     const i = Math.floor(f.t * mv.fps);
+    if (mv.lunge && f.y <= 0) f.vx = f.facing * mv.lunge * (f.state === 'dodge' ? Math.max(0, 1 - f.t * 2.5) : 1);
     if (f.state === 'special' && i >= SPECIAL_FIRE[f.who] && !f.hit) {
       f.hit = true;
-      fight.shots.push({ owner: f, x: f.x + f.facing * 90, y: FLOOR - 95 * (f.who === 'him' ? 1 : 1), dir: f.facing, t: 0, who: f.who });
+      fight.shots.push({ owner: f, x: f.x + f.facing * 90, y: FLOOR - 95, dir: f.facing, t: 0, who: f.who });
     }
-    if (mv.active && mv.active.includes(i) && !f.hit) {
+    const active = mv.active?.map((a) => (a === 'last' ? n - 1 : a));
+    if (active && active.includes(i) && !f.hit) {
       const dx = (other.x - f.x) * f.facing;
-      const high = mv.high && other.state === 'crouch';
-      if (dx > 0 && dx < mv.reach && Math.abs(other.y - f.y) < 90 && !high && other.state !== 'ko') {
-        f.hit = true;
-        const res = fighterHurt(other, mv.dmg, mv.push, f.facing, true);
-        f.meter = Math.min(100, f.meter + (res === 'hit' ? 10 : 4));
-        addSparks(other.x - f.facing * 20, FLOOR - other.y - 110, res === 'hit' ? '#ffd23a' : '#9fd8ff');
+      const vert = Math.abs(other.y - f.y);
+      const missed = (mv.high && other.state === 'crouch') || (mv.low && other.y > 20) || vert > (mv.anti ? 230 : 90);
+      if (dx > -10 && dx < mv.reach && !missed) {
+        const res = fighterHurt(other, mv.dmg, mv.push, f.facing, mv.kind, mv.low);
+        if (res !== 'miss') {
+          f.hit = true;
+          f.meter = Math.min(100, f.meter + (res === 'hit' ? 10 : 4));
+          addSparks(other.x - f.facing * 20, FLOOR - other.y - (mv.low ? 30 : 110), res === 'hit' ? '#ffd23a' : '#9fd8ff', mv.kind === 'heavy' ? 14 : 9);
+        }
       }
     }
-    if (i >= n) setState(f, 'idle');
+    if (i >= n) {
+      setState(f, f.y > 0 ? 'jump' : 'idle');
+      if (f.y <= 0) f.vx = 0;
+    }
   }
+  // Knocked down: fly back, lie there a moment, get up (unless that was the K.O.)
+  if (f.state === 'hitHeavy' && f.y <= 0 && f.t > 0.15) setState(f, 'down');
+  if (f.state === 'down' && f.t > 0.8 && (!f.ko || fight.phase === 'victory')) setState(f, 'getup');
+  if (f.state === 'getup' && f.t * 9 >= frameCount(f, 'getup')) setState(f, f.ko ? 'defeat' : 'idle');
   // Physics
   if (f.y > 0 || f.vy > 0) {
     f.vy -= FIGHT_SPEED.gravity * dt;
@@ -4343,14 +4412,12 @@ function updateFighter(f, other, dt) {
     if (f.y <= 0) {
       f.y = 0;
       f.vy = 0;
-      if (f.state === 'jump') {
-        setState(f, 'land');
-      }
+      if (f.state === 'jump' || (MOVES[f.state] && !MOVES[f.state].lunge)) setState(f, 'land');
     }
   }
   if (f.state === 'land' && f.t > 0.12) setState(f, 'idle');
   f.x += f.vx * dt;
-  if (f.state === 'hurt' || f.state === 'ko') f.vx *= Math.pow(0.02, dt);
+  if (['hitLight', 'hitHeavy', 'down', 'getup', 'defeat'].includes(f.state)) f.vx *= Math.pow(0.03, dt);
   f.x = Math.max(60, Math.min(FW - 60, f.x));
 }
 
@@ -4377,11 +4444,14 @@ function updateFight(dt) {
   if (fight.phase === 'fight') {
     fight.time = Math.max(0, fight.time - dt);
     const h = fightHeld();
+    const back = a.facing > 0 ? h.left : h.right;
+    const special = fight.press.has('special') || (fight.press.has('punch') && h.block);
     const me = {
       left: +h.left, right: +h.right, up: +h.up, down: +h.down, block: h.block,
-      punch: fight.press.has('punch') && !(h.down && a.meter >= 100),
+      punch: fight.press.has('punch') && !special,
       kick: fight.press.has('kick'),
-      special: fight.press.has('special') || (fight.press.has('punch') && h.down && a.meter >= 100),
+      special,
+      dodge: fight.press.has('block') && back,
     };
     fight.press.clear();
     fighterControl(a, b, me, dt);
@@ -4389,10 +4459,11 @@ function updateFight(dt) {
   }
   updateFighter(a, b, dt);
   updateFighter(b, a, dt);
-  // Keep them from walking through each other
+  // Keep them from walking through each other (not while one's on the floor)
   const gap = b.x - a.x;
-  if (Math.abs(gap) < 70 && Math.abs(a.y - b.y) < 100) {
-    const push = (70 - Math.abs(gap)) / 2 * Math.sign(gap || 1);
+  const lying = (f) => ['down', 'getup', 'defeat'].includes(f.state);
+  if (Math.abs(gap) < 70 && Math.abs(a.y - b.y) < 100 && !lying(a) && !lying(b)) {
+    const push = ((70 - Math.abs(gap)) / 2) * Math.sign(gap || 1);
     a.x -= push;
     b.x += push;
   }
@@ -4402,8 +4473,8 @@ function updateFight(dt) {
     s.t += dt;
     s.x += s.dir * 520 * dt;
     const target = s.owner === a ? b : a;
-    if (fight.phase === 'fight' && Math.abs(s.x - target.x) < 50 && target.y < 120 && target.state !== 'ko' && target.state !== 'crouch') {
-      const res = fighterHurt(target, 16, 260, s.dir, true);
+    if (fight.phase === 'fight' && Math.abs(s.x - target.x) < 50 && target.y < 120 && target.state !== 'crouch' && !fightInvulnerable(target)) {
+      const res = fighterHurt(target, 16, 260, s.dir, 'heavy', false);
       addSparks(s.x, s.y, s.who === 'him' ? '#c8a6ff' : '#8fd4ff', 16);
       if (res === 'hit') s.owner.meter = Math.min(100, s.owner.meter + 5);
       fight.shots.splice(i, 1);
@@ -4413,18 +4484,19 @@ function updateFight(dt) {
     const w = a.hp === b.hp ? (Math.random() < 0.5 ? 0 : 1) : a.hp > b.hp ? 0 : 1;
     fight.wins[w] += 1;
     const loser = fight.f[1 - w];
-    setState(loser, 'ko');
-    loser.vx = -loser.facing * 160;
+    loser.ko = true;
+    if (!['hitHeavy', 'down'].includes(loser.state)) knockDown(loser, -loser.facing, 180);
     fight.phase = 'ko';
     fight.t = 0;
     fight.banner = fight.time <= 0 ? 'TIME!' : 'K.O.!';
     fight.roundWinner = w;
   }
-  if (fight.phase === 'ko' && fight.t > 1.6) {
+  if (fight.phase === 'ko' && fight.t > 1.8) {
     const w = fight.roundWinner;
     if (fight.wins[w] >= 2) {
       fight.winner = w;
       setState(fight.f[w], 'victory');
+      fight.f[w].vx = 0;
       fight.phase = 'victory';
       fight.t = 0;
     } else {
@@ -4432,30 +4504,34 @@ function updateFight(dt) {
       fightRoundStart();
     }
   }
-  if (fight.phase === 'victory' && fight.t > 3) {
+  if (fight.phase === 'victory' && fight.t > 3.6) {
     fight.phase = 'out';
     fade.door = { fn: () => fightEnd(false) };
     fade.t = 0;
   }
 }
 
-// Which frame of the sheet to show, and how far it's lifted (for jumps).
+// Which frame of the sheet to show.
 function fighterFrame(f) {
   const fr = FIGHT_FRAMES[f.who];
   const loop = (anim, fps) => fr[anim][Math.floor(f.t * fps) % fr[anim].length];
-  const n = (anim) => fr[anim].length;
+  const once = (anim, fps) => fr[anim][Math.min(fr[anim].length - 1, Math.floor(f.t * fps))];
   switch (f.state) {
     case 'walkF': return loop('walkF', 10);
     case 'walkB': return loop('walkB', 9);
-    case 'crouch': return fr.crouch[f.t < 0.06 ? 0 : 1];
-    case 'block': return fr.block[Math.min(2, Math.floor(f.t * 14))];
-    case 'jump': return fr.jump[f.vy > 0 ? 1 : 2];
+    case 'crouch': return once('crouch', 16);
+    case 'block': return once('block', 14);
+    case 'jump': return f.t < 0.05 ? fr.jump[0] : fr.jump[f.vy > 0 ? 1 : 2];
     case 'land': return fr.jump[3];
-    case 'punch': case 'kick': case 'special': return fr[f.state][Math.min(n(f.state) - 1, Math.floor(f.t * MOVES[f.state].fps))];
-    case 'hurt': return fr.hurt[Math.min(1, Math.floor(f.t * 10))];
-    case 'ko': return fr.hurt[2];
+    case 'hitLight': return once('hitLight', 12);
+    case 'hitHeavy': return once('hitHeavy', 14);
+    case 'down': return once('knockdown', 8);
+    case 'getup': return once('getup', 9);
+    case 'defeat': return once('defeat', 4);
     case 'victory': return loop('victory', 5);
-    default: return loop('idle', 7);
+    default:
+      if (MOVES[f.state]) return once(f.state, MOVES[f.state].fps);
+      return loop('idle', 7);
   }
 }
 
@@ -4472,7 +4548,7 @@ function drawFighter(f) {
   fc.save();
   fc.translate(x, y);
   fc.scale(f.facing * k, k);
-  if (f.state === 'hurt' && f.t < 0.1) fc.filter = 'brightness(2.2)';
+  if ((f.state === 'hitLight' || f.state === 'hitHeavy') && f.t < 0.1) fc.filter = 'brightness(2.2)';
   fc.drawImage(fightImgs[f.who], sx, sy, w, h, -ax, -h, w, h);
   fc.restore();
 }
@@ -4557,8 +4633,11 @@ function drawFightHud() {
   fightText(String(Math.ceil(fight.time)), FW / 2, 39, 30, fight.time < 10 ? '#ff7a5c' : '#fff');
   // Controls hint for the first round
   if (fight.round === 1 && fight.phase !== 'victory' && fight.t < 6) {
-    const hint = isTouch ? 'PUNCH  ·  KICK  ·  hold BLOCK  ·  ↓ + PUNCH = special' : 'J punch · K kick · L block · ↑ jump · ↓ crouch · I special · Esc quit';
-    fightText(hint, FW / 2, FH - 70, 14, '#fff6e6');
+    const hints = isTouch
+      ? ['PUNCH: jab · → dash · ↓ uppercut     KICK: kick · → spin · ↓ sweep', 'hold BLOCK · ← + BLOCK dodge · BLOCK + PUNCH special']
+      : ['J jab · →J dash · ↓J uppercut · K kick · →K spin kick · ↓K sweep', 'L block · ←L dodge · ↑ jump · ↓ crouch · I special · Esc quit'];
+    fightText(hints[0], FW / 2, 104, 14, '#fff6e6');
+    fightText(hints[1], FW / 2, 124, 14, '#fff6e6');
   }
 }
 

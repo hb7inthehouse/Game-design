@@ -66,9 +66,11 @@ Chats react to what just happened and to your history together (`memory` and `OP
 
 Talk to the other one and pick "Bet I could take you in a fight." Choose how hard they go (easy, best shot, or no holding back), and the two of you square off in the Walmart parking lot at sunset (`assets/fight-bg.jpg`), Street Fighter style. You play whoever you are right now; they fight back. Best of three rounds, 60 seconds each, with health bars, round pips, a timer, ROUND / FIGHT / K.O. announcements and a victory pose.
 
-- **Keys:** arrows / WASD to move, Up or Space to jump, Down to crouch (ducks punches and energy waves), J or E to punch, K or T to kick, hold L or Shift to block, I or Q for the special, Esc to give up.
-- **Touch:** the pad to move, jump and crouch, PUNCH, KICK, and hold BLOCK (the RUN button). Down + PUNCH throws the special.
+- **Moves:** punch is a jab; toward them + punch is a dash attack, Down + punch an uppercut (it knocks jumpers out of the air). Kick is a kick; toward + kick is a spin kick, Down + kick a leg sweep (it can't be blocked standing, so jump it). Hold block to block; away + block is a quick dodge back. Jabs miss someone crouching.
+- **Getting hit:** light hits make them flinch; heavy ones (uppercut, spin kick, sweep, special) knock them down, and they get back up. Whoever loses the match ends up kneeling in defeat while the winner strikes a victory pose.
+- **Keys:** arrows / WASD to move, Up or Space to jump, Down to crouch, J or E to punch, K or T to kick, L or Shift to block, I or Q (or block + punch) for the special, Esc to give up.
+- **Touch:** the pad, PUNCH, KICK, and BLOCK (the RUN button); BLOCK + PUNCH throws the special.
 - **Special:** landing and taking hits fills the special meter. When it flashes, throw an energy wave (purple for Hudson, blue for Sidney).
 - **After:** back home, they react to who won, with choices for a victory kiss, a consolation kiss, "You cheated.", or a rematch. Wins and losses are remembered and come up next time you challenge them.
 
-Sprites are cut from the move sheets into `assets/fight-him.png` and `assets/fight-her.png` (idle, walk forward and back, punch, kick, crouch, jump, block, hurt, special, victory). Both face right in the art and are mirrored to face left.
+Sprites are cut from the move sheets into `assets/fight-him.png` and `assets/fight-her.png` (idle, walks, jab, kick, uppercut, spin kick, dash attack, leg sweep, jump, crouch, block, dodge, light and heavy hits, knockdown, get up, special, victory, defeat). Both face right in the art and are mirrored to face left.
