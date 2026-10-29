@@ -60,3 +60,15 @@ Chats react to what just happened and to your history together (`memory` and `OP
 - **Choices that come and go:** "How's the book going?" (talking to Sidney, once she's read some), "How far are you in Forest Falls?" (talking to Hudson), "Want to go back to Walmart?" (right after a trip), "About that kiss I owe you..." (when you're behind on the staring-contest tab), and "I'm sorry about earlier." (after teasing).
 - **Memory:** counts of kisses, hugs, cuddles, walks, trips, selfies, compliments and teases ("Kiss number 10! Yes, I'm counting.", "Trip number 3!", "Again? We were JUST there.").
 - **Mood:** sweet things (compliments, kisses, hugs, cuddles, walks, trips, apologies) raise it, with a few hearts; teasing and "Bad Dude!" lower it. A happy partner greets you warmly, a low one is short with you, and after teasing they sulk until you apologize.
+
+
+## Play fight: Parking Lot Showdown
+
+Talk to the other one and pick "Bet I could take you in a fight." Choose how hard they go (easy, best shot, or no holding back), and the two of you square off in the Walmart parking lot at sunset (`assets/fight-bg.jpg`), Street Fighter style. You play whoever you are right now; they fight back. Best of three rounds, 60 seconds each, with health bars, round pips, a timer, ROUND / FIGHT / K.O. announcements and a victory pose.
+
+- **Keys:** arrows / WASD to move, Up or Space to jump, Down to crouch (ducks punches and energy waves), J or E to punch, K or T to kick, hold L or Shift to block, I or Q for the special, Esc to give up.
+- **Touch:** the pad to move, jump and crouch, PUNCH, KICK, and hold BLOCK (the RUN button). Down + PUNCH throws the special.
+- **Special:** landing and taking hits fills the special meter. When it flashes, throw an energy wave (purple for Hudson, blue for Sidney).
+- **After:** back home, they react to who won, with choices for a victory kiss, a consolation kiss, "You cheated.", or a rematch. Wins and losses are remembered and come up next time you challenge them.
+
+Sprites are cut from the move sheets into `assets/fight-him.png` and `assets/fight-her.png` (idle, walk forward and back, punch, kick, crouch, jump, block, hurt, special, victory). Both face right in the art and are mirrored to face left.

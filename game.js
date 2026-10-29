@@ -265,6 +265,22 @@ const ACTION_KEYS = ['KeyE', 'Space', 'Enter'];
 const TALK_KEYS = ['KeyT', 'KeyQ'];
 
 window.addEventListener('keydown', (e) => {
+  if (fight.active && !dialogue.active) {
+    // The fight has the keyboard: moves are read from held keys, attacks here
+    e.preventDefault();
+    if (!e.repeat) {
+      if (e.code === 'Escape' && fight.phase === 'fight') {
+        fight.phase = 'out';
+        fight.winner = 1;
+        fade.door = { fn: () => fightEnd(true) };
+        fade.t = 0;
+      } else if (['KeyJ', 'KeyE', 'Enter'].includes(e.code)) fightPress('punch');
+      else if (['KeyK', 'KeyT', 'KeyX'].includes(e.code)) fightPress('kick');
+      else if (['KeyI', 'KeyQ'].includes(e.code)) fightPress('special');
+    }
+    keys.add(e.code);
+    return;
+  }
   if (ff.active) {
     // Forest Falls has the keyboard: jump is read from held keys, attack and quit here
     e.preventDefault();
@@ -321,6 +337,10 @@ document.querySelectorAll('#dpad button').forEach((btn) => {
 const runBtn = document.getElementById('run');
 runBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  if (fight.active) {
+    fight.blockHeld = true; // it's the BLOCK button in a fight
+    return;
+  }
   if (ff.active) {
     ff.touchJump = true; // it's the JUMP button in Forest Falls
     return;
@@ -332,6 +352,7 @@ runBtn.addEventListener('pointerdown', (e) => {
 for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
   runBtn.addEventListener(ev, () => {
     ff.touchJump = false;
+    fight.blockHeld = false;
   });
 }
 
@@ -489,6 +510,10 @@ function updateFade(dt) {
 
 // T / TALK: start a chat, or move it on like E does.
 function talkAction() {
+  if (fight.active && !dialogue.active) {
+    fightPress('kick');
+    return;
+  }
   if (dialogue.active) advanceDialogue();
   else if (canKiss() && !fade.door && !book.active && performance.now() - dialogue.endedAt > TALK_GRACE) startTalk();
 }
@@ -496,6 +521,10 @@ function talkAction() {
 function action() {
   if (dialogue.active) {
     advanceDialogue();
+    return;
+  }
+  if (fight.active) {
+    fightPress('punch');
     return;
   }
   // Extra presses right after a chat ends don't sit you down or open a door.
@@ -581,8 +610,18 @@ function updateActionButton() {
   if (room.store) label = shop.receipt ? 'OK' : nearItem() ? 'GRAB' : nearRegister() ? 'PAY' : '';
   if (fade.door || book.active || outing.phase) label = '';
   if (dialogue.active) label = 'NEXT';
+  const fighting = fight.active && !dialogue.active;
+  if (fighting) label = 'PUNCH';
   if (actionBtn.textContent !== label) actionBtn.textContent = label;
   actionBtn.disabled = !label;
+  const talkLabel = fighting ? 'KICK' : 'TALK';
+  if (talkBtn.textContent !== talkLabel) talkBtn.textContent = talkLabel;
+  const runLabel = fighting ? 'BLOCK' : ff.active ? 'JUMP' : 'RUN';
+  if (runBtn.textContent !== runLabel) runBtn.textContent = runLabel;
+  if (fighting) {
+    talkBtn.disabled = false;
+    return;
+  }
   talkBtn.disabled = dialogue.active || !canKiss() || !!fade.door || book.active || !!outing.phase || !!room.store;
 }
 
@@ -2039,6 +2078,7 @@ const OPENERS = {
   cuddle: () => pick(['That was nice. I almost fell asleep on you.', 'Five more minutes of that later?']),
   selfie: () => "I already made that picture my lock screen.",
   kiss: () => pick(['Back for more already?', "Again? ...I'm not complaining."]),
+  fight: (e) => e.quit ? "You ran away from our fight! Coward. ...Cute coward." : e.won ? 'My arm still hurts from that kick. Nice one.' : 'Still sore about the fight? Want some ice?',
 };
 
 function opener() {
@@ -2062,6 +2102,8 @@ const MAIN_CHOICES = [
   { label: 'How far are you in Forest Falls?', to: 'ask_game', when: () => partner.who === 'him' && reading.levels > 0 },
   { label: 'What should we do?', to: 'plans' },
   { label: 'Want to go back to Walmart?', to: 'door_store', when: () => !!recentEvent('trip', 900) },
+  { label: 'Bet I could take you in a fight.', to: 'fight', when: () => !recentEvent('fight', 120) },
+  { label: 'Rematch. Right now.', to: 'fight_rematch', when: () => !!recentEvent('fight', 120) },
   { label: 'You look really cute today.', to: 'compliment' },
   { label: `How's ${DOG} doing?`, to: 'dog' },
   { label: 'See you in a bit.', to: 'bye' },
@@ -2133,6 +2175,64 @@ const TALK_TREE = {
   },
   game_watch: { lines: [['you', "Only if you don't backseat. ...You're going to backseat."]], to: 'menu' },
   bye: { lines: [['you', () => pick([`Don't be long, ${myName()}!`, 'Okay, bye bye.', "I'll be here."])]] },
+
+  // Play fight in the Walmart parking lot
+  fight: {
+    lines: [['you', () => {
+      const w = memory.fightsWon || 0;
+      const l = memory.fightsLost || 0;
+      if (w + l === 0) return "Oh, you're ON. Walmart parking lot. Loser buys snacks.";
+      if (l > w) return `Says the one I've beaten ${l} time${l === 1 ? '' : 's'}. Parking lot. Now.`;
+      if (w > l) return `You've won ${w} time${w === 1 ? '' : 's'}. That ends today.`;
+      return "We're tied. Not for long. Parking lot.";
+    }]],
+    choices: [
+      { label: 'Go easy on me.', to: 'fight_easy' },
+      { label: 'Give it your best shot.', to: 'fight_normal' },
+      { label: "Don't hold back.", to: 'fight_hard' },
+      { label: 'Actually, never mind.', to: 'fight_no' },
+    ],
+  },
+  fight_rematch: {
+    lines: [['you', () => recentEvent('fight', 120)?.won ? 'Oh, you want to lose your title? Fine.' : "Back for more? I'll be gentle. ...Maybe."]],
+    choices: [
+      { label: 'Go easy on me.', to: 'fight_easy' },
+      { label: 'Give it your best shot.', to: 'fight_normal' },
+      { label: "Don't hold back.", to: 'fight_hard' },
+    ],
+  },
+  fight_easy: { lines: [['you', "Aw. Okay, I'll go easy. ...Ish."]], after: () => (fight.level = 'easy'), event: 'fight' },
+  fight_normal: { lines: [['you', 'Stretch first. You know how you get.']], after: () => (fight.level = 'normal'), event: 'fight' },
+  fight_hard: { lines: [['you', "You asked for it. No mercy."], ['me', '...I regret this already.']], after: () => (fight.level = 'hard'), event: 'fight' },
+  fight_no: { lines: [['you', "That's what I thought. Chicken."]] },
+  fight_won: {
+    lines: [['you', () => pick(["Okay, okay! You win! I'm buying snacks.", "How did you DO that?! Rematch later.", "Fine. You're the champion. For now."])], ['me', ['Winner gets a kiss too, right?', 'Say it. Say I am the best.', 'Snacks. Now.']]],
+    after: () => moodShift(1),
+    choices: [
+      { label: 'Victory kiss?', to: 'kiss_victory' },
+      { label: 'Good game.', to: 'fight_gg' },
+      { label: 'Rematch!', to: 'fight_rematch' },
+    ],
+  },
+  fight_lost: {
+    lines: [['you', () => pick(['Ha! Who buys the snacks? You do!', 'Undefeated. Bow before me.', "That was too easy. Want me to go easier?"])]],
+    choices: [
+      { label: 'Rematch!', to: 'fight_rematch' },
+      { label: 'Kiss to make me feel better?', to: 'kiss_consolation' },
+      { label: 'You cheated.', to: 'fight_cheat' },
+    ],
+  },
+  fight_quit: { lines: [['you', "Giving up already? I'll take that as a win."]], to: 'menu' },
+  fight_gg: { lines: [['you', 'Good game. ...Seriously, where did you learn that kick?']], to: 'menu' },
+  fight_cheat: { lines: [['you', "Sore loser! ...Okay, c'mere. No hard feelings."]], to: 'menu' },
+  kiss_victory: {
+    lines: [['you', 'The champion gets a kiss. Those are the rules.']],
+    kiss: { lines: [['you', "Don't let it go to your head."], ['me', 'Too late.']], then: 'menu' },
+  },
+  kiss_consolation: {
+    lines: [['you', 'Aww. Come here, you poor thing.']],
+    kiss: { pose: 'foreheadKiss', lines: [['you', 'Better?'], ['me', "Still lost. But better."]], then: 'menu' },
+  },
 
   // The front door
   door: {
@@ -2506,6 +2606,7 @@ function talkThen(then) {
   else if (then === 'cuddle') startCuddle();
   else if (then === 'walk') startDogWalk();
   else if (then === 'store') startOuting();
+  else if (then === 'fight') startFight();
   else if (then === 'pay') storePay();
   else if (then === 'hands' || then === 'piggy') startTogether(then);
   else if (then === 'selfie') startSelfie(() => playTalkNode('selfie_after'));
@@ -3979,6 +4080,528 @@ function drawReceipt() {
   ctx.globalAlpha = 1;
 }
 
+// ---- Play fight: Parking Lot Showdown -------------------------------------------
+// From the talk menu ("Bet I could take you in a fight"), the two of them square
+// off in the Walmart parking lot at sunset, Street Fighter style. You play
+// whoever you are right now; the other one fights back (easy, normal or hard,
+// picked in the chat). Best of three rounds, 60 seconds each.
+// Keys: arrows / WASD move, Up or Space jump, Down crouch, J or E punch, K or T
+// kick, L or Shift block, I or Q special (or Down + punch) once the meter is
+// full, Esc to give up. Touch: the pad, PUNCH, KICK, and BLOCK (the RUN button).
+// Sprites: assets/fight-him.png and assets/fight-her.png, cut from the move
+// sheets; both face right in the art and are mirrored to face left.
+
+const FIGHT_FRAMES = {"him":{"idle":[[0,0,89,157,43],[91,0,90,157,43],[183,0,88,157,42],[273,0,88,158,42],[363,0,89,157,43],[454,0,89,158,43]],"walkF":[[545,0,98,157,47],[645,0,84,158,40],[731,0,83,158,39],[816,0,102,157,49],[920,0,102,156,49],[1024,0,102,155,49]],"walkB":[[1128,0,100,155,46],[1230,0,84,155,39],[1316,0,83,155,39],[1401,0,89,155,43],[1492,0,90,155,43],[1584,0,95,154,45]],"punch":[[1681,0,97,150,47],[1780,0,153,145,54],[0,160,163,147,56],[165,160,102,151,50]],"kick":[[269,160,96,148,48],[367,160,97,151,52],[466,160,137,148,48],[605,160,96,149,48]],"crouch":[[703,160,90,127,44],[795,160,94,106,44],[891,160,91,132,45]],"jump":[[984,160,96,127,39],[1082,160,96,125,35],[1180,160,107,135,55],[1289,160,98,123,46]],"block":[[1389,160,88,144,42],[1479,160,95,141,45],[1576,160,91,144,43]],"hurt":[[1669,160,98,144,51],[1769,160,112,133,63],[1883,160,91,144,44]],"special":[[0,313,106,144,49],[108,313,105,145,53],[215,313,107,150,54],[324,313,102,130,51],[428,313,189,139,52],[619,313,104,135,48]],"victory":[[725,313,71,128,36],[798,313,83,128,37],[883,313,101,132,46],[986,313,90,132,43]]},"her":{"idle":[[0,0,76,200,36],[78,0,74,200,36],[154,0,74,200,37],[230,0,74,200,38],[306,0,76,200,38],[384,0,80,200,39]],"walkF":[[466,0,75,200,40],[543,0,76,200,40],[621,0,77,200,29],[700,0,83,200,37],[785,0,74,200,39],[861,0,89,200,41]],"walkB":[[952,0,74,200,38],[1028,0,77,200,38],[1107,0,73,200,37],[1182,0,82,200,39],[1266,0,72,200,36],[1340,0,72,199,37]],"punch":[[1414,0,106,184,51],[1522,0,123,185,52],[1647,0,113,182,56],[1762,0,123,184,58]],"kick":[[1887,0,110,192,59],[0,202,136,192,39],[138,202,172,193,58],[312,202,97,187,16]],"crouch":[[411,202,101,144,51],[514,202,114,130,51],[630,202,106,114,51]],"jump":[[738,202,107,123,50],[847,202,102,147,33],[951,202,100,160,42],[1053,202,99,140,48]],"block":[[1154,202,114,182,55],[1270,202,112,181,60],[1384,202,120,182,62]],"hurt":[[1506,202,161,169,105],[1669,202,146,168,92],[1817,202,114,141,52]],"special":[[1933,202,112,183,55],[0,397,123,186,67],[125,397,235,185,83],[362,397,243,205,91],[607,397,138,173,72],[747,397,115,179,55]],"victory":[[864,397,76,192,44],[942,397,94,205,49],[1038,397,127,213,62],[1167,397,85,192,44]]}};
+const fightImgs = { him: loadImage('assets/fight-him.png'), her: loadImage('assets/fight-her.png') };
+const fightBg = loadImage('assets/fight-bg.jpg');
+const FW = 960; // the fight is drawn at this size, then scaled to the screen
+const FH = 540;
+const FLOOR = 498;
+const FIGHT_SCALE = { him: 1.3, her: 1.08 }; // sheet px to fight px: same height on screen
+const ROUND_TIME = 60;
+const FIGHT_SPEED = { walk: 190, back: 150, jump: 640, gravity: 1750 };
+// Moves: frames per second, which frames hit, reach, damage, knockback
+const MOVES = {
+  punch: { fps: 14, active: [1, 2], reach: 92, dmg: 6, push: 120, high: true },
+  kick: { fps: 11, active: [2], reach: 118, dmg: 9, push: 190 },
+  special: { fps: 9 },
+};
+const SPECIAL_FIRE = { him: 4, her: 3 }; // frame the energy wave leaves the fist
+const DIFFICULTY = {
+  easy: { think: 0.55, attack: 0.35, block: 0.15, special: 0.2 },
+  normal: { think: 0.32, attack: 0.55, block: 0.4, special: 0.5 },
+  hard: { think: 0.16, attack: 0.75, block: 0.65, special: 0.8 },
+};
+const fightCanvas = document.createElement('canvas');
+fightCanvas.width = FW;
+fightCanvas.height = FH;
+const fc = fightCanvas.getContext('2d');
+
+const fight = {
+  active: false, phase: null, t: 0, round: 1, wins: [0, 0], time: ROUND_TIME, level: 'normal',
+  f: [], shots: [], sparks: [], shake: 0, banner: '', winner: -1, press: new Set(), blockHeld: false,
+};
+
+function newFighter(who, x, facing) {
+  return { who, x, y: 0, vx: 0, vy: 0, facing, hp: 100, meter: 0, state: 'idle', t: 0, hit: false, stun: 0, ai: { next: 0.6, plan: null } };
+}
+
+// Called from the talk menu once you've picked how hard.
+function startFight() {
+  fade.door = {
+    fn: () => {
+      fight.active = true;
+      fight.round = 1;
+      fight.wins = [0, 0];
+      fight.winner = -1;
+      fightRoundStart();
+      cam.snap = true;
+    },
+  };
+  fade.t = 0;
+}
+
+function fightRoundStart() {
+  fight.f = [newFighter(player.who, 300, 1), newFighter(partner.who, 660, -1)];
+  fight.shots = [];
+  fight.sparks = [];
+  fight.time = ROUND_TIME;
+  fight.phase = 'intro';
+  fight.t = 0;
+  fight.press.clear();
+}
+
+function fightEnd(quit) {
+  fight.active = false;
+  runBtn.textContent = 'RUN';
+  const won = fight.winner === 0;
+  remember(won ? 'fightsWon' : 'fightsLost');
+  happened('fight', { won, quit: !!quit });
+  partner.facing = Math.atan2(player.y - partner.y, player.x - partner.x);
+  player.facing = Math.atan2(partner.y - player.y, partner.x - player.x);
+  dialogue.active = true;
+  playTalkNode(quit ? 'fight_quit' : won ? 'fight_won' : 'fight_lost');
+}
+
+// Press handling: keys and buttons drop presses here, the update reads them.
+function fightPress(what) {
+  if (fight.phase === 'fight') fight.press.add(what);
+}
+
+function fightHeld() {
+  const d = heldDirs();
+  return {
+    left: d.has('left'), right: d.has('right'), up: d.has('up') || keys.has('Space'), down: d.has('down'),
+    block: fight.blockHeld || ['KeyL', 'ShiftLeft', 'ShiftRight'].some((k) => keys.has(k)),
+  };
+}
+
+function fightBusy(f) {
+  return ['punch', 'kick', 'special', 'hurt', 'ko', 'victory'].includes(f.state);
+}
+
+function setState(f, s) {
+  if (f.state === s) return;
+  f.state = s;
+  f.t = 0;
+  f.hit = false;
+}
+
+// One fighter's moves for this frame: from you, or from the AI.
+function fighterControl(f, other, input, dt) {
+  const onGround = f.y <= 0;
+  if (f.state === 'hurt') {
+    f.stun -= dt;
+    if (f.stun <= 0) setState(f, 'idle');
+    return;
+  }
+  if (fightBusy(f)) return;
+  if (onGround) f.facing = other.x > f.x ? 1 : -1;
+  if (input.special && f.meter >= 100 && onGround) {
+    f.meter = 0;
+    setState(f, 'special');
+    f.vx = 0;
+    return;
+  }
+  if (input.punch) {
+    setState(f, 'punch');
+    if (onGround) f.vx = 0;
+    return;
+  }
+  if (input.kick) {
+    setState(f, 'kick');
+    if (onGround) f.vx = 0;
+    return;
+  }
+  if (!onGround) return;
+  if (input.up) {
+    f.vy = FIGHT_SPEED.jump;
+    f.y = 0.01;
+    f.vx = (input.right - input.left) * FIGHT_SPEED.walk;
+    setState(f, 'jump');
+    return;
+  }
+  if (input.down) {
+    f.vx = 0;
+    setState(f, 'crouch');
+    return;
+  }
+  if (input.block) {
+    f.vx = 0;
+    setState(f, 'block');
+    return;
+  }
+  const dir = input.right - input.left;
+  if (dir) {
+    const forward = dir === f.facing;
+    f.vx = dir * (forward ? FIGHT_SPEED.walk : FIGHT_SPEED.back);
+    setState(f, forward ? 'walkF' : 'walkB');
+  } else {
+    f.vx = 0;
+    setState(f, 'idle');
+  }
+}
+
+// The other one: walk in, swing, block now and then, throw the special when it's ready.
+function fightAI(f, other, dt) {
+  const lv = DIFFICULTY[fight.level];
+  const ai = f.ai;
+  const input = { left: 0, right: 0, up: 0, down: 0, block: false, punch: false, kick: false, special: false };
+  const dist = Math.abs(other.x - f.x);
+  const toward = other.x > f.x ? 'right' : 'left';
+  const away = toward === 'right' ? 'left' : 'right';
+  // Blocking: seeing a swing or an energy wave coming
+  const threat = (['punch', 'kick'].includes(other.state) && dist < 150) || fight.shots.some((s) => s.owner !== f && Math.abs(s.x - f.x) < 220 && Math.sign(f.x - s.x) === s.dir);
+  if (threat && ai.blocking === undefined) ai.blocking = Math.random() < lv.block;
+  if (!threat) ai.blocking = undefined;
+  if (ai.blocking) {
+    input.block = true;
+    return input;
+  }
+  ai.next -= dt;
+  if (ai.next <= 0) {
+    ai.next = lv.think * (0.6 + Math.random() * 0.8);
+    const r = Math.random();
+    if (f.meter >= 100 && dist > 220 && r < lv.special) ai.plan = 'special';
+    else if (dist < 120 && r < lv.attack) ai.plan = Math.random() < 0.55 ? 'punch' : 'kick';
+    else if (dist < 90 && r < 0.6) ai.plan = 'back';
+    else if (r < 0.08) ai.plan = 'jump';
+    else if (dist > 110) ai.plan = 'walk';
+    else ai.plan = Math.random() < 0.3 ? 'crouch' : 'wait';
+    ai.hold = 0.25 + Math.random() * 0.4;
+  }
+  ai.hold -= dt;
+  switch (ai.plan) {
+    case 'special': input.special = true; ai.plan = null; break;
+    case 'punch': input.punch = true; ai.plan = null; break;
+    case 'kick': input.kick = true; ai.plan = null; break;
+    case 'jump': input.up = 1; input[toward] = 1; ai.plan = null; break;
+    case 'walk': if (dist > 105) input[toward] = 1; else ai.plan = null; break;
+    case 'back': input[away] = 1; if (ai.hold <= 0) ai.plan = null; break;
+    case 'crouch': input.down = 1; if (ai.hold <= 0) ai.plan = null; break;
+    default: break;
+  }
+  return input;
+}
+
+function fighterHurt(f, dmg, push, dir, blockable) {
+  if (blockable && f.state === 'block' && f.y <= 0) {
+    f.hp = Math.max(0, f.hp - Math.round(dmg * 0.15));
+    f.vx = dir * push * 0.5;
+    f.meter = Math.min(100, f.meter + 6);
+    return 'block';
+  }
+  f.hp = Math.max(0, f.hp - dmg);
+  f.meter = Math.min(100, f.meter + 12);
+  f.vx = dir * push;
+  f.vy = f.y > 0 ? 200 : 0;
+  f.stun = 0.38;
+  setState(f, 'hurt');
+  fight.shake = Math.min(10, dmg);
+  return 'hit';
+}
+
+function addSparks(x, y, color, n = 9) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 80 + Math.random() * 180;
+    fight.sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, t: 0, life: 0.35 + Math.random() * 0.2, color });
+  }
+}
+
+function frameCount(f, anim) {
+  return FIGHT_FRAMES[f.who][anim].length;
+}
+
+function updateFighter(f, other, dt) {
+  f.t += dt;
+  // Moves play through once
+  if (MOVES[f.state]) {
+    const mv = MOVES[f.state];
+    const n = frameCount(f, f.state);
+    const i = Math.floor(f.t * mv.fps);
+    if (f.state === 'special' && i >= SPECIAL_FIRE[f.who] && !f.hit) {
+      f.hit = true;
+      fight.shots.push({ owner: f, x: f.x + f.facing * 90, y: FLOOR - 95 * (f.who === 'him' ? 1 : 1), dir: f.facing, t: 0, who: f.who });
+    }
+    if (mv.active && mv.active.includes(i) && !f.hit) {
+      const dx = (other.x - f.x) * f.facing;
+      const high = mv.high && other.state === 'crouch';
+      if (dx > 0 && dx < mv.reach && Math.abs(other.y - f.y) < 90 && !high && other.state !== 'ko') {
+        f.hit = true;
+        const res = fighterHurt(other, mv.dmg, mv.push, f.facing, true);
+        f.meter = Math.min(100, f.meter + (res === 'hit' ? 10 : 4));
+        addSparks(other.x - f.facing * 20, FLOOR - other.y - 110, res === 'hit' ? '#ffd23a' : '#9fd8ff');
+      }
+    }
+    if (i >= n) setState(f, 'idle');
+  }
+  // Physics
+  if (f.y > 0 || f.vy > 0) {
+    f.vy -= FIGHT_SPEED.gravity * dt;
+    f.y += f.vy * dt;
+    if (f.y <= 0) {
+      f.y = 0;
+      f.vy = 0;
+      if (f.state === 'jump') {
+        setState(f, 'land');
+      }
+    }
+  }
+  if (f.state === 'land' && f.t > 0.12) setState(f, 'idle');
+  f.x += f.vx * dt;
+  if (f.state === 'hurt' || f.state === 'ko') f.vx *= Math.pow(0.02, dt);
+  f.x = Math.max(60, Math.min(FW - 60, f.x));
+}
+
+function updateFight(dt) {
+  fight.t += dt;
+  fight.shake = Math.max(0, fight.shake - dt * 30);
+  for (let i = fight.sparks.length - 1; i >= 0; i--) {
+    const s = fight.sparks[i];
+    s.t += dt;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.vy += 400 * dt;
+    if (s.t > s.life) fight.sparks.splice(i, 1);
+  }
+  const [a, b] = fight.f;
+  if (fight.phase === 'intro') {
+    if (fight.t > 2) {
+      fight.phase = 'fight';
+      fight.t = 0;
+    }
+    for (const f of fight.f) f.t += dt;
+    return;
+  }
+  if (fight.phase === 'fight') {
+    fight.time = Math.max(0, fight.time - dt);
+    const h = fightHeld();
+    const me = {
+      left: +h.left, right: +h.right, up: +h.up, down: +h.down, block: h.block,
+      punch: fight.press.has('punch') && !(h.down && a.meter >= 100),
+      kick: fight.press.has('kick'),
+      special: fight.press.has('special') || (fight.press.has('punch') && h.down && a.meter >= 100),
+    };
+    fight.press.clear();
+    fighterControl(a, b, me, dt);
+    fighterControl(b, a, fightAI(b, a, dt), dt);
+  }
+  updateFighter(a, b, dt);
+  updateFighter(b, a, dt);
+  // Keep them from walking through each other
+  const gap = b.x - a.x;
+  if (Math.abs(gap) < 70 && Math.abs(a.y - b.y) < 100) {
+    const push = (70 - Math.abs(gap)) / 2 * Math.sign(gap || 1);
+    a.x -= push;
+    b.x += push;
+  }
+  // Energy waves
+  for (let i = fight.shots.length - 1; i >= 0; i--) {
+    const s = fight.shots[i];
+    s.t += dt;
+    s.x += s.dir * 520 * dt;
+    const target = s.owner === a ? b : a;
+    if (fight.phase === 'fight' && Math.abs(s.x - target.x) < 50 && target.y < 120 && target.state !== 'ko' && target.state !== 'crouch') {
+      const res = fighterHurt(target, 16, 260, s.dir, true);
+      addSparks(s.x, s.y, s.who === 'him' ? '#c8a6ff' : '#8fd4ff', 16);
+      if (res === 'hit') s.owner.meter = Math.min(100, s.owner.meter + 5);
+      fight.shots.splice(i, 1);
+    } else if (s.x < -80 || s.x > FW + 80) fight.shots.splice(i, 1);
+  }
+  if (fight.phase === 'fight' && (a.hp <= 0 || b.hp <= 0 || fight.time <= 0)) {
+    const w = a.hp === b.hp ? (Math.random() < 0.5 ? 0 : 1) : a.hp > b.hp ? 0 : 1;
+    fight.wins[w] += 1;
+    const loser = fight.f[1 - w];
+    setState(loser, 'ko');
+    loser.vx = -loser.facing * 160;
+    fight.phase = 'ko';
+    fight.t = 0;
+    fight.banner = fight.time <= 0 ? 'TIME!' : 'K.O.!';
+    fight.roundWinner = w;
+  }
+  if (fight.phase === 'ko' && fight.t > 1.6) {
+    const w = fight.roundWinner;
+    if (fight.wins[w] >= 2) {
+      fight.winner = w;
+      setState(fight.f[w], 'victory');
+      fight.phase = 'victory';
+      fight.t = 0;
+    } else {
+      fight.round += 1;
+      fightRoundStart();
+    }
+  }
+  if (fight.phase === 'victory' && fight.t > 3) {
+    fight.phase = 'out';
+    fade.door = { fn: () => fightEnd(false) };
+    fade.t = 0;
+  }
+}
+
+// Which frame of the sheet to show, and how far it's lifted (for jumps).
+function fighterFrame(f) {
+  const fr = FIGHT_FRAMES[f.who];
+  const loop = (anim, fps) => fr[anim][Math.floor(f.t * fps) % fr[anim].length];
+  const n = (anim) => fr[anim].length;
+  switch (f.state) {
+    case 'walkF': return loop('walkF', 10);
+    case 'walkB': return loop('walkB', 9);
+    case 'crouch': return fr.crouch[f.t < 0.06 ? 0 : 1];
+    case 'block': return fr.block[Math.min(2, Math.floor(f.t * 14))];
+    case 'jump': return fr.jump[f.vy > 0 ? 1 : 2];
+    case 'land': return fr.jump[3];
+    case 'punch': case 'kick': case 'special': return fr[f.state][Math.min(n(f.state) - 1, Math.floor(f.t * MOVES[f.state].fps))];
+    case 'hurt': return fr.hurt[Math.min(1, Math.floor(f.t * 10))];
+    case 'ko': return fr.hurt[f.who === 'her' ? 2 : 1];
+    case 'victory': return loop('victory', 5);
+    default: return loop('idle', 7);
+  }
+}
+
+function drawFighter(f) {
+  const [sx, sy, w, h, ax] = fighterFrame(f);
+  const k = FIGHT_SCALE[f.who];
+  const x = f.x;
+  const y = FLOOR - f.y;
+  // Shadow on the asphalt
+  fc.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  fc.beginPath();
+  fc.ellipse(f.x, FLOOR + 2, 42 * (1 - Math.min(0.5, f.y / 400)), 9, 0, 0, Math.PI * 2);
+  fc.fill();
+  fc.save();
+  fc.translate(x, y);
+  fc.scale(f.facing * k, k);
+  if (f.state === 'hurt' && f.t < 0.1) fc.filter = 'brightness(2.2)';
+  fc.drawImage(fightImgs[f.who], sx, sy, w, h, -ax, -h, w, h);
+  fc.restore();
+}
+
+function drawShot(s) {
+  const col = s.who === 'him' ? ['#5b2bd6', '#b597ff', '#ffffff'] : ['#1f6fe0', '#8fd4ff', '#ffffff'];
+  const wob = Math.sin(s.t * 30) * 3;
+  fc.save();
+  fc.translate(s.x, s.y);
+  fc.scale(s.dir, 1);
+  fc.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 3; i++) {
+    fc.fillStyle = col[i];
+    fc.globalAlpha = [0.35, 0.6, 0.9][i];
+    fc.beginPath();
+    fc.ellipse(-i * 6, 0, 46 - i * 14 + wob, 30 - i * 9, 0, -Math.PI / 2, Math.PI / 2);
+    fc.ellipse(-i * 6, 0, 18 - i * 5, 30 - i * 9, 0, Math.PI / 2, -Math.PI / 2);
+    fc.fill();
+  }
+  // Trail
+  fc.globalAlpha = 0.4;
+  fc.fillStyle = col[1];
+  fc.fillRect(-90, -6, 80, 12);
+  fc.restore();
+}
+
+function fightText(text, x, y, size, fill, align = 'center', stroke = '#1a1024') {
+  fc.font = `700 ${size}px ${PIXEL_FONT}`;
+  fc.textAlign = align;
+  fc.textBaseline = 'middle';
+  fc.lineWidth = Math.max(3, size / 6);
+  fc.strokeStyle = stroke;
+  fc.lineJoin = 'round';
+  fc.strokeText(text, x, y);
+  fc.fillStyle = fill;
+  fc.fillText(text, x, y);
+}
+
+function drawFightHud() {
+  const barW = 360;
+  fight.f.forEach((f, i) => {
+    const left = i === 0;
+    const x = left ? 30 : FW - 30 - barW;
+    // Health
+    fc.fillStyle = '#1a1024';
+    fc.fillRect(x - 3, 24, barW + 6, 26);
+    fc.fillStyle = '#7a1a1a';
+    fc.fillRect(x, 27, barW, 20);
+    const hw = (barW * f.hp) / 100;
+    fc.fillStyle = f.hp > 30 ? '#ffd23a' : '#ff5c3a';
+    fc.fillRect(left ? x + barW - hw : x, 27, hw, 20);
+    fc.fillStyle = 'rgba(255,255,255,0.35)';
+    fc.fillRect(left ? x + barW - hw : x, 27, hw, 5);
+    fightText(NAMES[f.who].toUpperCase() + (i === 0 ? ' (YOU)' : ''), left ? x : x + barW, 64, 18, '#fff', left ? 'left' : 'right');
+    // Round wins
+    for (let r = 0; r < 2; r++) {
+      const px = left ? x + barW - 14 - r * 22 : x + 14 + r * 22;
+      fc.fillStyle = '#1a1024';
+      fc.beginPath();
+      fc.arc(px, 66, 8, 0, Math.PI * 2);
+      fc.fill();
+      fc.fillStyle = fight.wins[i] > r ? '#ffd23a' : '#4a3a5a';
+      fc.beginPath();
+      fc.arc(px, 66, 5.5, 0, Math.PI * 2);
+      fc.fill();
+    }
+    // Special meter
+    const mx = left ? 30 : FW - 30 - 220;
+    fc.fillStyle = '#1a1024';
+    fc.fillRect(mx - 3, FH - 34, 226, 18);
+    fc.fillStyle = '#2a2040';
+    fc.fillRect(mx, FH - 31, 220, 12);
+    const full = f.meter >= 100;
+    fc.fillStyle = full ? (Math.floor(fight.t * 8) % 2 ? '#fff' : (f.who === 'him' ? '#b597ff' : '#8fd4ff')) : (f.who === 'him' ? '#7b4ff0' : '#3a8ef0');
+    const mw = (220 * f.meter) / 100;
+    fc.fillRect(left ? mx : mx + 220 - mw, FH - 31, mw, 12);
+    fightText(full ? 'SPECIAL READY!' : 'SPECIAL', left ? mx : mx + 220, FH - 46, 13, full ? '#fff6c4' : '#cfc3e6', left ? 'left' : 'right');
+  });
+  // Timer
+  fc.fillStyle = '#1a1024';
+  fc.fillRect(FW / 2 - 34, 16, 68, 44);
+  fightText(String(Math.ceil(fight.time)), FW / 2, 39, 30, fight.time < 10 ? '#ff7a5c' : '#fff');
+  // Controls hint for the first round
+  if (fight.round === 1 && fight.phase !== 'victory' && fight.t < 6) {
+    const hint = isTouch ? 'PUNCH  ·  KICK  ·  hold BLOCK  ·  ↓ + PUNCH = special' : 'J punch · K kick · L block · ↑ jump · ↓ crouch · I special · Esc quit';
+    fightText(hint, FW / 2, FH - 70, 14, '#fff6e6');
+  }
+}
+
+function drawFight() {
+  fc.save();
+  fc.clearRect(0, 0, FW, FH);
+  if (fight.shake > 0) fc.translate((Math.random() - 0.5) * fight.shake, (Math.random() - 0.5) * fight.shake);
+  if (spriteReady(fightBg)) fc.drawImage(fightBg, -10, -10, FW + 20, FH + 20);
+  else {
+    fc.fillStyle = '#3a2a40';
+    fc.fillRect(0, 0, FW, FH);
+  }
+  // Whoever's attacking is drawn in front
+  const order = [...fight.f].sort((p, q) => (MOVES[p.state] ? 1 : 0) - (MOVES[q.state] ? 1 : 0));
+  if (spriteReady(fightImgs.him) && spriteReady(fightImgs.her)) for (const f of order) drawFighter(f);
+  for (const s of fight.shots) drawShot(s);
+  for (const s of fight.sparks) {
+    fc.globalAlpha = 1 - s.t / s.life;
+    fc.fillStyle = s.color;
+    fc.fillRect(s.x - 3, s.y - 3, 6, 6);
+  }
+  fc.globalAlpha = 1;
+  fc.restore();
+  drawFightHud();
+  // Big announcements
+  if (fight.phase === 'intro') {
+    const zoom = Math.min(1, fight.t * 4);
+    if (fight.t < 1.2) fightText(`ROUND ${fight.round}`, FW / 2, FH / 2 - 40, 56 * zoom + 1, '#fff');
+    else fightText('FIGHT!', FW / 2, FH / 2 - 40, 72, '#ffd23a');
+  } else if (fight.phase === 'ko') {
+    fightText(fight.banner, FW / 2, FH / 2 - 40, 84, '#ff5c3a');
+  } else if (fight.phase === 'victory' || fight.phase === 'out') {
+    fightText(`${NAMES[fight.f[fight.winner].who].toUpperCase()} WINS!`, FW / 2, FH / 2 - 60, 64, '#ffd23a');
+    if (fight.winner === 0) fightText('Loser buys snacks!', FW / 2, FH / 2, 24, '#fff');
+  }
+  // Onto the screen, as big as fits
+  const k = Math.min(viewW / FW, viewH / FH);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, viewW, viewH);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(fightCanvas, (viewW - FW * k) / 2, (viewH - FH * k) / 2, FW * k, FH * k);
+}
+
 // ---- Update --------------------------------------------------------------
 
 function update(dt) {
@@ -3986,6 +4609,12 @@ function update(dt) {
   updateCamera(dt);
   if (fade.door) {
     player.walkTime = 0; // hold still while the screen fades
+    updateActionButton();
+    return;
+  }
+  if (fight.active) {
+    if (dialogue.active) updateDialogue(dt);
+    else updateFight(dt);
     updateActionButton();
     return;
   }
@@ -4568,6 +5197,7 @@ function drawHud() {
     const what = nearPoop() ? 'pick up the poop' : 'throw it in the bin';
     pill(isTouch ? `Tap ${nearPoop() ? 'PICK UP' : 'TRASH'} to ${what}` : `Press E to ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
+  if (fight.active) drawFight(); // covers the whole screen
   drawWalkBanner();
   drawBookOverlay();
   drawFFOverlay();
