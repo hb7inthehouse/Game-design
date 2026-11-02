@@ -529,6 +529,10 @@ function action() {
     fightPress('punch');
     return;
   }
+  if (bedScene.phase) {
+    wakeBed();
+    return;
+  }
   // Extra presses right after a chat ends don't sit you down or open a door.
   if (performance.now() - dialogue.endedAt < TALK_GRACE) return;
   if (fade.door || book.active) return;
@@ -572,6 +576,7 @@ function action() {
   const seat = nearestSeat();
   if (seat) {
     player.seat = seat;
+    player.sitTime = 0;
     player.walkTime = 0;
     reading.progress = 0;
     if (gamesHere()) ffOpen();
@@ -614,6 +619,7 @@ function updateActionButton() {
   if (dialogue.active) label = 'NEXT';
   const fighting = fight.active && !dialogue.active;
   if (fighting) label = 'PUNCH';
+  if (bedScene.phase && !dialogue.active) label = bedScene.phase === 'sleep' ? 'WAKE UP' : '';
   if (actionBtn.textContent !== label) actionBtn.textContent = label;
   actionBtn.disabled = !label;
   const talkLabel = fighting ? 'KICK' : 'TALK';
@@ -624,7 +630,7 @@ function updateActionButton() {
     talkBtn.disabled = false;
     return;
   }
-  talkBtn.disabled = dialogue.active || !canKiss() || !!fade.door || book.active || !!outing.phase || !!room.store;
+  talkBtn.disabled = !!bedScene.phase || dialogue.active || !canKiss() || !!fade.door || book.active || !!outing.phase || !!room.store;
 }
 
 // ---- TV --------------------------------------------------------------------
@@ -1961,13 +1967,23 @@ function updatePartner(dt) {
   if (partner.stay <= 0) choosePartnerSpot();
 }
 
+// Him on a seat: from behind on the couch, facing us on the bed, side-on on
+// the chaise (mirrored for left). Facing us he sits down through the
+// transition frames first. `t` is how long he's been sitting.
+function hisSeatedPose(seat, t = 99) {
+  const breathe = Math.floor(performance.now() / 700) % 4;
+  if (seat.view === 'back') return { name: 'backSit' + breathe };
+  if (seat.view === 'front') {
+    if (t < 0.36) return { name: 'transition' + Math.min(3, 1 + Math.floor(t / 0.12)) };
+    return { name: 'frontSit' + breathe };
+  }
+  return { name: 'sideSit' + breathe, mirror: seat.view === 'left' };
+}
+
 // Partner on the couch: just sitting, no book.
 function partnerSeatedPose(ch, seat) {
   if (cuddle.active) return cuddlePose(ch, seat, player.seat);
-  if (ch.name === 'him') {
-    if (seat.view === 'back') return { name: 'back', waistUp: true };
-    return { name: 'floorSit' };
-  }
+  if (ch.name === 'him') return hisSeatedPose(seat);
   if (seat.view === 'back') return { name: 'couchBack' };
   if (seat.view === 'front') return { name: 'couchFront' };
   return { name: 'couchRight', mirror: seat.view === 'left' };
@@ -1983,6 +1999,22 @@ const PORTRAITS = {
   him: { r: [12, 0, 117, 117] },
 };
 const TYPE_SPEED = 38; // characters per second
+
+// Which face to show for a line: laughing, blushing, pouting or happy, read
+// from the words (and they pout while sulking).
+const FACE_WORDS = {
+  laughing: /\b(ha+|haha\w*|hehe\w*|yay|yes+|woo+)\b|LOSING|best\. trip|undefeated|i win|i always win|bow before/i,
+  blushing: /kiss|love|cute|blush|cuddle|♥|hug|sweet|favorite|smooth|adorable|big spoon|snuggle|night\b|squish|mwah/i,
+  pouting: /hmph|rude|mad\b|sore|cheat|chicken|coward|regret|\bugh\b|still a little|giving up|lost|telling (dude|the dog)|\.\.\.oh|you blinked|pay up|too easy|fine\.\s/i,
+};
+function faceFor(line) {
+  if (line.face) return line.face;
+  let face = 'happy';
+  for (const [f, re] of Object.entries(FACE_WORDS)) if (re.test(line.text)) { face = f; break; }
+  if (memory.sulking && line.who === partner.who && face !== 'laughing') face = 'pouting';
+  line.face = face;
+  return face;
+}
 // `a` is whoever gave the kisses, `b` whoever got them.
 const KISS_TALKS = [
   [['b', 'What was that for?'], ['a', 'Do I need a reason?'], ['b', "No. But now it's my turn."]],
@@ -2080,6 +2112,7 @@ const OPENERS = {
   cuddle: () => pick(['That was nice. I almost fell asleep on you.', 'Five more minutes of that later?']),
   selfie: () => "I already made that picture my lock screen.",
   kiss: () => pick(['Back for more already?', "Again? ...I'm not complaining."]),
+  slept: (e) => e.mode === 'cuddle' ? 'I slept SO well. You make a great pillow.' : 'Morning, you. How did you sleep?',
   fight: (e) => e.quit ? "You ran away from our fight! Coward. ...Cute coward." : e.won ? 'My arm still hurts from that kick. Nice one.' : 'Still sore about the fight? Want some ice?',
 };
 
@@ -2108,6 +2141,7 @@ const MAIN_CHOICES = [
   { label: 'Rematch. Right now.', to: 'fight_rematch', when: () => !!recentEvent('fight', 120) },
   { label: 'You look really cute today.', to: 'compliment' },
   { label: `How's ${DOG} doing?`, to: 'dog' },
+  { label: 'Ready for bed?', to: 'bed', when: () => !room.store },
   { label: 'See you in a bit.', to: 'bye' },
 ];
 const TALK_TREE = {
@@ -2177,6 +2211,20 @@ const TALK_TREE = {
   },
   game_watch: { lines: [['you', "Only if you don't backseat. ...You're going to backseat."]], to: 'menu' },
   bye: { lines: [['you', () => pick([`Don't be long, ${myName()}!`, 'Okay, bye bye.', "I'll be here."])]] },
+
+  // Bedtime
+  bed: {
+    lines: [['you', () => recentEvent('slept', 600) ? 'Again? We just got up! ...Okay, a nap.' : pick(["Mm, yes. I'm so sleepy.", 'Finally. I was waiting for you to ask.', 'Only if you don\'t steal the blanket.'])]],
+    choices: [
+      { label: 'Cuddle up with me.', to: 'bed_cuddle' },
+      { label: 'Hold my hand?', to: 'bed_hands' },
+      { label: 'Just sleep. Night!', to: 'bed_sleep' },
+      { label: 'Not yet.', to: 'menu' },
+    ],
+  },
+  bed_cuddle: { lines: [['you', 'Big spoon reporting for duty.']], after: () => (bedScene.mode = 'cuddle'), event: 'bed' },
+  bed_hands: { lines: [['you', 'Always.']], after: () => (bedScene.mode = 'hands'), event: 'bed' },
+  bed_sleep: { lines: [['you', `Lights out. Come on, ${DOG}.`]], after: () => (bedScene.mode = 'sleep'), event: 'bed' },
 
   // Play fight in the Walmart parking lot
   fight: {
@@ -2609,6 +2657,7 @@ function talkThen(then) {
   else if (then === 'walk') startDogWalk();
   else if (then === 'store') startOuting();
   else if (then === 'fight') startFight();
+  else if (then === 'bed') startBed(bedScene.mode);
   else if (then === 'pay') storePay();
   else if (then === 'hands' || then === 'piggy') startTogether(then);
   else if (then === 'selfie') startSelfie(() => playTalkNode('selfie_after'));
@@ -2728,6 +2777,7 @@ function endTogether() {
 }
 
 function togetherFrame() {
+  if (room.store && together.mode === 'hands') return { name: cartFrame(), sheet: 'cart' };
   const moving = player.walkTime > 0;
   const bob = moving ? Math.abs(Math.sin(player.gait * Math.PI * 2)) * 4 : 0;
   if (together.mode === 'piggy') return { name: 'piggyback', mirror: together.left, lift: bob };
@@ -2750,7 +2800,33 @@ const HOLD_ARM = 0.5; // radians the holding arms reach toward each other
 const HAND_Y = 68; // map px above the floor where their hands meet (facing us or away)
 
 function handsWalking() {
-  return together.mode === 'hands' && player.walkTime > 0;
+  return together.mode === 'hands' && player.walkTime > 0 && !room.store;
+}
+
+// ---- Shopping cart ----
+// In the store they push a cart together instead of holding hands
+// (assets/cart.png): pushing it right, left, toward and away from the camera,
+// standing with it (and talking, leaning, resting on it while you wait), and
+// grabbing it at the door. Frames are scaled so he's as tall as in the
+// couple art.
+const CART = {"pushR0":[0,0,232,217],"pushR1":[234,0,279,216],"pushR2":[515,0,289,216],"pushR3":[806,0,289,217],"pushR4":[1097,0,292,216],"pushR5":[1391,0,287,216],"pushL0":[1680,0,242,208],"pushL1":[0,219,279,208],"pushL2":[281,219,279,206],"pushL3":[562,219,274,206],"pushL4":[838,219,281,206],"pushL5":[1121,219,270,206],"pushF0":[1393,219,117,223],"pushF1":[1512,219,114,221],"pushF2":[1628,219,111,221],"pushF3":[1741,219,112,220],"pushF4":[1855,219,111,221],"pushF5":[0,444,114,221],"pushB0":[116,444,131,223],"pushB1":[249,444,128,221],"pushB2":[379,444,125,220],"pushB3":[506,444,125,220],"pushB4":[633,444,125,221],"pushB5":[760,444,123,217],"idle0":[885,444,130,227],"idle1":[1017,444,224,226],"idle2":[1243,444,192,228],"idle3":[1437,444,141,211],"turn0":[1580,444,178,223],"turn1":[1760,444,182,223],"turn2":[0,674,178,224],"turn3":[180,674,165,224]};
+const cartImg = loadImage('assets/cart.png');
+
+function cartFrame() {
+  const moving = player.walkTime > 0;
+  const step = Math.floor(player.gait * WALK_FRAMES) % WALK_FRAMES;
+  if (shop.gripT > 0) return 'turn' + Math.min(3, Math.floor((1 - shop.gripT / 1.2) * 4));
+  if (moving) {
+    shop.cartDir = player.moveDx > 0 ? 'R' : player.moveDx < 0 ? 'L' : player.moveDy < 0 ? 'B' : 'F';
+    return 'push' + shop.cartDir + step;
+  }
+  if (dialogue.active) return 'idle2'; // chatting over the cart
+  const dir = shop.cartDir ?? 'F';
+  if (dir !== 'F') return 'push' + dir + '0';
+  const t = player.idleTime;
+  if (t > 9) return 'idle1'; // casual lean
+  if (t > 4) return 'idle3'; // arms resting on the cart
+  return 'idle0';
 }
 
 function drawHandsWalk() {
@@ -2762,7 +2838,7 @@ function drawHandsWalk() {
     x: player.x + dx * s,
     y: player.y + (who === 'him' ? -1 : 1), // keeps a steady draw order
     actor: { gait: player.gait, walkTime: player.walkTime, running: player.running, moveDx: player.moveDx, moveDy: player.moveDy, holdArm },
-    pose: sideways ? { name: 'right', mirror: dir < 0, side: true } : { name: player.moveDy < 0 ? 'back' : 'front', stepping: true },
+    pose: sideways ? { name: 'right', mirror: dir < 0, side: true } : walkPose(player),
   });
   const pair = sideways
     ? [walker('him', -dir * HAND_GAP, -HOLD_ARM), walker('her', dir * HAND_GAP, HOLD_ARM)]
@@ -2869,8 +2945,9 @@ function drawTalkBubble(c, w, h) {
 }
 
 function drawCouple(c) {
-  if (!spriteReady(coupleImg)) return;
-  const [sx, sy, w, h] = COUPLE[c.name];
+  const img = c.sheet === 'cart' ? cartImg : coupleImg;
+  if (!spriteReady(img)) return;
+  const [sx, sy, w, h] = (c.sheet === 'cart' ? CART : COUPLE)[c.name];
   ctx.save();
   ctx.translate(c.x, c.y);
   ctx.scale(room.scale, room.scale);
@@ -2884,7 +2961,7 @@ function drawCouple(c) {
   const k = COUPLE_K * (COUPLE_SIZE[c.name] ?? 1);
   ctx.scale(c.mirror ? -k : k, k);
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(coupleImg, sx, sy, w, h, -w / 2, -h, w, h);
+  ctx.drawImage(img, sx, sy, w, h, -w / 2, -h, w, h);
   ctx.restore();
   if (c.bubble) drawTalkBubble(c, w, h);
 }
@@ -3062,7 +3139,7 @@ function updateCuddle(dt) {
 // up on the couch, cross-legged on the bed.
 function cuddlePose(ch, seat, other) {
   const toward = other && other.x < seat.x ? 'left' : 'right';
-  if (ch.name === 'him') return seat.view === 'back' ? { name: 'back', waistUp: true } : { name: 'floorSit' };
+  if (ch.name === 'him') return hisSeatedPose(seat);
   if (seat.view === 'back') return { name: 'couchBackLeft', mirror: toward === 'right' };
   return { name: 'couchFrontRight', mirror: toward === 'left' };
 }
@@ -3237,7 +3314,22 @@ function drawDialogue() {
   ctx.strokeStyle = '#efe6d8';
   ctx.lineWidth = 2;
   ctx.stroke();
-  if (spriteReady(ch.img)) {
+  const face = ch.frames['face_' + faceFor(line)];
+  if (face && spriteReady(ch.extraImg)) {
+    // Expression portrait, fitted into the frame
+    const [fx0, fy0, fw, fh] = face.r;
+    const k = (portrait - 8) / Math.max(fw, fh);
+    const talking = dialogue.shown < line.text.length;
+    const bob = talking ? Math.round(Math.sin(dialogue.blink * 14)) : 0;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(px + 2, py + 2, portrait - 4, portrait - 4, 5);
+    ctx.clip();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(ch.extraImg, fx0, fy0, fw, fh, px + (portrait - fw * k) / 2, py + portrait - 2 - fh * k + bob, fw * k, fh * k);
+    ctx.imageSmoothingEnabled = true;
+    ctx.restore();
+  } else if (spriteReady(ch.img)) {
     const f = ch.frames.front;
     const [cx, cy, cw, chh] = PORTRAITS[line.who].r;
     ctx.save();
@@ -3405,6 +3497,7 @@ function updateLeashDog(dt) {
 
 function leashPose() {
   if (walk.squat > 0) return { name: 'sit' };
+  if (dog.walkTime > 0 && dog.upDown) return { name: (dog.upDown > 0 ? 'leashFront' : 'leashBack') + (Math.floor(dog.stride / DOG_STEP) % 6) };
   if (dog.walkTime > 0) return { name: DOG_WALK[Math.floor(dog.stride / DOG_STEP) % DOG_WALK.length], left: dog.flip };
   if (dog.sniff > 0) return { name: 'bow', left: dog.flip }; // nose to the grass
   return { name: 'idle', left: dog.flip };
@@ -3416,7 +3509,7 @@ function drawLeash() {
   const s = room.scale;
   const hx = player.x + Math.cos(player.facing) * 10 * s;
   const hy = player.y - 78 * s;
-  const cx = dog.x + (dog.flip ? -1 : 1) * 16 * s;
+  const cx = dog.x + (dog.walkTime > 0 && dog.upDown ? 0 : (dog.flip ? -1 : 1) * 16 * s);
   const cy = dog.y - (walk.squat > 0 ? 34 : 30) * s;
   const span = Math.hypot(cx - hx, cy - hy);
   const sag = Math.max(0, LEASH * s - span) * 0.35;
@@ -3700,6 +3793,8 @@ function updateOuting(dt) {
       outing.phase = null;
       shop.active = true;
       shop.hintT = 6;
+      shop.gripT = 1.2; // grab a cart
+      shop.cartDir = 'F';
     }
   }
 }
@@ -3755,8 +3850,13 @@ function goHome() {
     room: 'apartment', x: door.x + 26, y: door.spawn.y - 20, facing: -Math.PI / 2, seat: null, path: [], spot: null,
     stay: 6, greeted: true, walkTime: 0, idleTime: 0,
   });
-  // Dude runs up to say hi
-  dog.state = 'follow';
+  // Dude jumps up to say hi (and gets his new toy)
+  if (gotToy) memory.dudeToy = true;
+  dog.newToy = gotToy;
+  dog.state = 'greet';
+  dog.greetT = 0;
+  dog.toyT = 0;
+  dog.flip = player.x < door.x;
   dog.hop = null;
   dog.x = door.x;
   dog.y = door.y - 110;
@@ -3820,6 +3920,7 @@ function updateStore(dt) {
   if (!room.store || fade.door) return;
   if (!shop.paid && !dialogue.active) shop.t += dt;
   shop.hintT = Math.max(0, (shop.hintT ?? 0) - dt);
+  shop.gripT = Math.max(0, (shop.gripT ?? 0) - dt);
   if (shop.receipt) shop.receipt.t += dt;
   for (let i = shop.popups.length - 1; i >= 0; i--) {
     shop.popups[i].t += dt;
@@ -4681,6 +4782,162 @@ function drawFight() {
   ctx.drawImage(fightCanvas, (viewW - FW * k) / 2, (viewH - FH * k) / 2, FW * k, FH * k);
 }
 
+// ---- Bedtime ----------------------------------------------------------------------
+// "Ready for bed?" in the talk menu: the lights go down, you're both in the
+// bedroom, and the bed art (assets/bed.png) plays over the bed: lying down,
+// a goodnight chat, then sleeping however you picked (side by side, cuddled
+// up, or holding hands) with Dude asleep at the foot of the bed. Press E to
+// wake up: they stir, it's morning, and you're up next to the bed.
+const BED_TILES = {"lie0":[0,0,241,257],"lie1":[243,0,240,257],"lie2":[485,0,239,257],"lie3":[726,0,239,257],"sleep0":[967,0,165,227],"sleep1":[1134,0,165,225],"sleep2":[1301,0,163,227],"sleep3":[1466,0,162,227],"cuddle0":[1630,0,165,224],"cuddle1":[1797,0,165,225],"cuddle2":[0,259,166,225],"cuddle3":[168,259,165,225],"wake0":[335,259,162,242],"wake1":[499,259,163,241],"wake2":[664,259,159,240],"wake3":[825,259,152,240],"poses0":[979,259,173,208],"poses1":[1154,259,172,208],"poses2":[1328,259,174,208],"poses3":[1504,259,172,207]};
+const bedImg = loadImage('assets/bed.png');
+const BED_RECT = { x: 258, y: 198, w: 392, h: 482 }; // the bed in the bedroom art
+const bedScene = { phase: null, t: 0, mode: 'sleep', zs: [] };
+
+function startBed(mode) {
+  bedScene.mode = mode;
+  fade.door = {
+    fn: () => {
+      if (together.mode) together.mode = null;
+      room = ROOMS.bedroom;
+      player.seat = null;
+      partnerStandUp();
+      partner.room = 'bedroom';
+      partner.path = [];
+      cuddle.active = false;
+      bedScene.phase = 'lie';
+      bedScene.t = 0;
+      bedScene.zs = [];
+      // Dude curls up at the foot of the bed
+      dog.state = 'home';
+      dog.hop = null;
+      dog.x = 600;
+      dog.y = 712;
+      trail.length = 0;
+      player.x = BED_RECT.x + BED_RECT.w / 2;
+      player.y = BED_RECT.y + BED_RECT.h / 2;
+      resize();
+      cam.snap = true;
+    },
+  };
+  fade.t = 0;
+}
+
+function bedFrame() {
+  const t = bedScene.t;
+  switch (bedScene.phase) {
+    case 'lie': return 'lie' + Math.min(3, Math.floor(t / 0.55));
+    case 'talk': return bedScene.mode === 'cuddle' ? 'poses1' : 'poses0'; // facing each other / lying awake
+    case 'sleep':
+      if (bedScene.mode === 'cuddle') return 'cuddle' + (Math.floor(t / 0.7) % 4);
+      if (bedScene.mode === 'hands') return t % 6 < 3 ? 'poses2' : 'poses3';
+      return 'sleep' + (Math.floor(t / 0.7) % 4);
+    case 'wake': return 'wake' + Math.min(3, Math.floor(t / 0.6));
+    default: return 'wake3';
+  }
+}
+
+function updateBed(dt) {
+  bedScene.t += dt;
+  if (bedScene.phase === 'lie' && bedScene.t > 2.3) {
+    bedScene.phase = 'talk';
+    bedScene.t = 0;
+    const lines = {
+      cuddle: [['you', 'C\'mere. Warmest spot in the house.'], ['me', 'Night. Love you.'], ['you', 'Love you more.']],
+      hands: [['me', () => `Night, ${yourName()}.`], ['you', 'Night. Don\'t let go, okay?'], ['me', 'Never.']],
+      sleep: [['you', () => `Goodnight, ${myName()}.`], ['me', ['Night night.', 'Sweet dreams.']], ['you', `...Is ${DOG} snoring already?`]],
+    }[bedScene.mode];
+    sayLines(talkLines(lines), () => {
+      bedScene.phase = 'sleep';
+      bedScene.t = 0;
+    });
+  }
+  if (bedScene.phase === 'sleep') {
+    // Zzz drifting up
+    if (Math.random() < dt * 1.2) bedScene.zs.push({ x: BED_RECT.x + BED_RECT.w * (0.3 + Math.random() * 0.4), y: BED_RECT.y + 90, t: 0 });
+  }
+  for (let i = bedScene.zs.length - 1; i >= 0; i--) {
+    const z = bedScene.zs[i];
+    z.t += dt;
+    if (z.t > 2.4) bedScene.zs.splice(i, 1);
+  }
+  if (bedScene.phase === 'wake' && bedScene.t > 2.6) {
+    bedScene.phase = 'out';
+    fade.door = { fn: wakeUp };
+    fade.t = 0;
+  }
+}
+
+function wakeBed() {
+  if (bedScene.phase !== 'sleep') return;
+  bedScene.phase = 'wake';
+  bedScene.t = 0;
+  bedScene.zs = [];
+}
+
+// Morning: up and standing next to the bed
+function wakeUp() {
+  bedScene.phase = null;
+  remember('nights');
+  moodShift(3);
+  happened('slept', { mode: bedScene.mode });
+  player.x = 395;
+  player.y = 712;
+  player.facing = 0;
+  player.walkTime = 0;
+  player.idleTime = 0;
+  Object.assign(partner, { room: 'bedroom', x: 505, y: 712, facing: Math.PI, seat: null, path: [], stay: 8, greeted: true, walkTime: 0, idleTime: 0 });
+  dog.state = 'follow';
+  dog.x = 600;
+  dog.y = 760;
+  dog.idleTime = 0;
+  exciteDog();
+  cam.snap = true;
+  sayLines(talkLines([
+    ['you', ['Morning, sleepyhead.', 'Good morning! ...Your hair is a mess.', 'Mmm. Five more minutes?']],
+    ['me', bedScene.mode === 'cuddle' ? 'Best sleep ever.' : ['Morning!', 'Coffee. Need coffee.', 'Did I steal the blanket again?']],
+  ]));
+}
+
+function drawBedScene() {
+  if (!bedScene.phase || bedScene.phase === 'out' && !fade.door) return;
+  const f = BED_TILES[bedFrame()];
+  if (!f || !spriteReady(bedImg)) return;
+  const [sx, sy, w, h] = f;
+  const R = BED_RECT;
+  ctx.drawImage(bedImg, sx, sy, w, h, R.x, R.y, R.w, R.h);
+  // Dude asleep at the foot of the bed
+  if (spriteReady(dogImg)) {
+    const [dx, dy, dw, dh] = DOG_FRAMES.sleep.r;
+    ctx.save();
+    ctx.translate(600, 712);
+    ctx.scale(room.scale * 0.5, room.scale * 0.5);
+    ctx.drawImage(dogImg, dx, dy, dw, dh, -dw / 2, -dh, dw, dh);
+    ctx.restore();
+  }
+  ctx.font = `700 28px ${PIXEL_FONT}`;
+  ctx.textAlign = 'center';
+  for (const z of bedScene.zs) {
+    ctx.globalAlpha = Math.max(0, 1 - z.t / 2.4);
+    ctx.fillStyle = '#d8ccff';
+    ctx.fillText('z', z.x + Math.sin(z.t * 3) * 12, z.y - z.t * 40);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Night-time darkness over everything (lifting as they wake up)
+function drawNight() {
+  if (!bedScene.phase) return;
+  let a = 0.45;
+  if (bedScene.phase === 'lie') a = Math.min(0.45, bedScene.t * 0.3);
+  if (bedScene.phase === 'wake') a = Math.max(0.05, 0.45 - bedScene.t * 0.17);
+  ctx.fillStyle = `rgba(14, 12, 42, ${a})`;
+  ctx.fillRect(0, 0, viewW, viewH);
+  if (bedScene.phase === 'sleep' && !dialogue.active) {
+    ctx.font = `600 12px ${PIXEL_FONT}`;
+    pill(isTouch ? 'Tap WAKE UP when you\'re ready' : 'Press E to wake up', viewW / 2, viewH - 30, 'rgba(28, 25, 21, 0.85)', '#efe6d8');
+  }
+}
+
 // ---- Update --------------------------------------------------------------
 
 function update(dt) {
@@ -4694,6 +4951,12 @@ function update(dt) {
   if (fight.active) {
     if (dialogue.active) updateDialogue(dt);
     else updateFight(dt);
+    updateActionButton();
+    return;
+  }
+  if (bedScene.phase) {
+    if (dialogue.active) updateDialogue(dt);
+    updateBed(dt);
     updateActionButton();
     return;
   }
@@ -4762,6 +5025,7 @@ function updatePlayer(dt) {
 
   if (player.seat) {
     player.idleTime = 0;
+    player.sitTime = (player.sitTime ?? 0) + dt;
     if (dx === 0 && dy === 0) {
       reading.progress = Math.max(0, reading.progress - READ_DECAY * dt);
       return;
@@ -4939,6 +5203,18 @@ const CHARS = {
     backIdle: null,
   },
 };
+// Extra sprite sheets (assets/her-extra.png, assets/him-extra.png): walking
+// toward and away from the camera (6 frames each), dialogue portraits (happy,
+// laughing, pouting, blushing), and for him sitting front, side and back,
+// cross-legged, lounging, and sitting down. Frames marked `extra` come from
+// these sheets instead of the main one.
+const EXTRA_FRAMES = { her: {"walkFront0":{"r":[0,0,103,344],"ax":51,"ay":344,"extra":1},"walkFront1":{"r":[105,0,106,345],"ax":63,"ay":345,"extra":1},"walkFront2":{"r":[213,0,97,348],"ax":55,"ay":348,"extra":1},"walkFront3":{"r":[312,0,99,345],"ax":60,"ay":345,"extra":1},"walkFront4":{"r":[413,0,96,342],"ax":54,"ay":342,"extra":1},"walkFront5":{"r":[511,0,94,348],"ax":54,"ay":348,"extra":1},"walkBack0":{"r":[607,0,94,342],"ax":47,"ay":342,"extra":1},"walkBack1":{"r":[703,0,96,348],"ax":43,"ay":348,"extra":1},"walkBack2":{"r":[801,0,96,343],"ax":48,"ay":343,"extra":1},"walkBack3":{"r":[899,0,100,342],"ax":50,"ay":342,"extra":1},"walkBack4":{"r":[1001,0,93,342],"ax":53,"ay":342,"extra":1},"walkBack5":{"r":[1096,0,92,342],"ax":46,"ay":342,"extra":1},"face_happy":{"r":[1190,0,115,128],"ax":53,"ay":128,"extra":1},"face_laughing":{"r":[1307,0,116,128],"ax":57,"ay":128,"extra":1},"face_pouting":{"r":[1425,0,112,128],"ax":58,"ay":128,"extra":1},"face_blushing":{"r":[1539,0,111,128],"ax":59,"ay":128,"extra":1}}, him: {"walkFront0":{"r":[0,0,116,356],"ax":59,"ay":356,"extra":1},"walkFront1":{"r":[118,0,114,360],"ax":69,"ay":360,"extra":1},"walkFront2":{"r":[234,0,111,364],"ax":65,"ay":364,"extra":1},"walkFront3":{"r":[347,0,109,364],"ax":68,"ay":364,"extra":1},"walkFront4":{"r":[458,0,111,359],"ax":69,"ay":359,"extra":1},"walkFront5":{"r":[571,0,111,366],"ax":63,"ay":366,"extra":1},"walkBack0":{"r":[684,0,109,360],"ax":55,"ay":360,"extra":1},"walkBack1":{"r":[795,0,109,368],"ax":47,"ay":368,"extra":1},"walkBack2":{"r":[906,0,107,359],"ax":54,"ay":359,"extra":1},"walkBack3":{"r":[1015,0,109,364],"ax":64,"ay":364,"extra":1},"walkBack4":{"r":[1126,0,106,363],"ax":61,"ay":363,"extra":1},"walkBack5":{"r":[1234,0,103,364],"ax":49,"ay":364,"extra":1},"face_happy":{"r":[1339,0,122,128],"ax":61,"ay":128,"extra":1},"face_laughing":{"r":[1463,0,123,128],"ax":61,"ay":128,"extra":1},"face_pouting":{"r":[1588,0,121,128],"ax":60,"ay":128,"extra":1},"face_blushing":{"r":[1711,0,121,128],"ax":61,"ay":128,"extra":1},"frontSit0":{"r":[1834,0,96,274],"ax":48,"ay":181,"extra":1},"frontSit1":{"r":[1932,0,96,272],"ax":48,"ay":180,"extra":1},"frontSit2":{"r":[0,370,93,274],"ax":46,"ay":181,"extra":1},"frontSit3":{"r":[95,370,93,272],"ax":46,"ay":180,"extra":1},"sideSit0":{"r":[190,370,110,270],"ax":33,"ay":173,"extra":1},"sideSit1":{"r":[302,370,101,270],"ax":30,"ay":173,"extra":1},"sideSit2":{"r":[405,370,101,272],"ax":30,"ay":174,"extra":1},"sideSit3":{"r":[508,370,102,271],"ax":31,"ay":173,"extra":1},"backSit0":{"r":[612,370,96,206],"ax":48,"ay":200,"extra":1},"backSit1":{"r":[710,370,94,205],"ax":47,"ay":199,"extra":1},"backSit2":{"r":[806,370,94,205],"ax":47,"ay":199,"extra":1},"backSit3":{"r":[902,370,93,206],"ax":46,"ay":200,"extra":1},"cross0":{"r":[997,370,167,256],"ax":83,"ay":256,"extra":1},"cross1":{"r":[1166,370,169,255],"ax":84,"ay":255,"extra":1},"cross2":{"r":[1337,370,170,255],"ax":85,"ay":255,"extra":1},"cross3":{"r":[1509,370,171,254],"ax":85,"ay":254,"extra":1},"crossSide0":{"r":[1682,370,133,252],"ax":66,"ay":252,"extra":1},"crossSide1":{"r":[1817,370,134,254],"ax":67,"ay":254,"extra":1},"crossSide2":{"r":[0,646,133,252],"ax":66,"ay":252,"extra":1},"crossSide3":{"r":[135,646,130,251],"ax":65,"ay":251,"extra":1},"lounge0":{"r":[267,646,307,340],"ax":153,"ay":340,"extra":1},"lounge1":{"r":[576,646,228,332],"ax":114,"ay":332,"extra":1},"lounge2":{"r":[806,646,280,328],"ax":140,"ay":328,"extra":1},"transition0":{"r":[1088,646,114,356],"ax":57,"ay":263,"extra":1},"transition1":{"r":[1204,646,118,325],"ax":59,"ay":232,"extra":1},"transition2":{"r":[1324,646,132,295],"ax":66,"ay":202,"extra":1},"transition3":{"r":[1458,646,120,283],"ax":60,"ay":190,"extra":1}} };
+for (const who of ['her', 'him']) {
+  Object.assign(CHARS[who].frames, EXTRA_FRAMES[who]);
+  CHARS[who].extraImg = loadImage(`assets/${who}-extra.png`);
+}
+const WALK_FRAMES = 6; // per stride cycle, walking toward or away from the camera
+
 const GAIT = {
   walkCycle: 150, // map px per full stride (two steps)
   runCycle: 230,
@@ -4992,20 +5268,33 @@ function facingAway(facing) {
 // Pose for the character you're playing.
 function playerPose() {
   const ch = CHARS[player.who];
-  if (player.seat) return seatedPose(ch, player.seat);
+  if (player.seat) return seatedPose(ch, player.seat, player.sitTime);
   return actorPose(ch, player, partner);
 }
 
 // Walking, waving, cheering or idling: shared by you and your partner.
+// Walking toward or away from the camera: the 6-frame walks.
+function walkPose(actor) {
+  return { name: (actor.moveDy < 0 ? 'walkBack' : 'walkFront') + (Math.floor(actor.gait * WALK_FRAMES) % WALK_FRAMES) };
+}
+
 function actorPose(ch, actor, other) {
   if (actor.walkTime > 0) {
     if (actor.moveDx !== 0) return { name: 'right', mirror: actor.moveDx < 0, side: true };
-    return { name: actor.moveDy < 0 ? 'back' : 'front', stepping: true };
+    return walkPose(actor);
   }
   if (actor.cheer > 0) return { name: 'happy' };
   if (actor.wave > 0) return { name: 'wave', mirror: other.x < actor.x };
   const t = actor.idleTime;
-  if (t > FLOOR_SIT_AFTER) return { name: 'floorSit' };
+  if (t > FLOOR_SIT_AFTER) {
+    if (ch.name !== 'him') return { name: 'floorSit' };
+    // Him: cross-legged on the floor (facing the way he was), then lounging back
+    const slow = Math.floor(t * 1.5) % 4;
+    if (t > FLOOR_SIT_AFTER * 2) return { name: 'lounge' + (Math.floor((t - FLOOR_SIT_AFTER * 2) / 8) % 3) };
+    const c = Math.cos(actor.facing);
+    if (Math.abs(c) > 0.7) return { name: 'crossSide' + slow, mirror: c < 0 };
+    return { name: 'cross' + slow };
+  }
   if (t > IDLE_POSE_AFTER) {
     const cycle = Math.floor((t - IDLE_POSE_AFTER) / IDLE_POSE_EVERY);
     const inPose = (t - IDLE_POSE_AFTER) % IDLE_POSE_EVERY < IDLE_POSE_HOLD;
@@ -5032,13 +5321,10 @@ function partnerPose() {
 // stops turning pages, and turns to the viewer when she finishes a chapter.
 // He has no couch art: facing away he shows his back from the waist up,
 // otherwise he sits cross-legged.
-function seatedPose(ch, seat) {
+function seatedPose(ch, seat, t = 99) {
   if (cuddle.active) return cuddlePose(ch, seat, partner.seat);
+  if (ch.name === 'him') return hisSeatedPose(seat, t);
   const celebrating = reading.popTime > 0;
-  if (ch.name === 'him') {
-    if (seat.view === 'back' && !celebrating) return { name: 'back', waistUp: true };
-    return { name: 'floorSit' };
-  }
   const dogLeft = dog.x < seat.x;
   const glancing = !celebrating && reading.sinceTurn > GLANCE_AFTER && dog.state === 'couch';
   if (seat.view === 'back') {
@@ -5057,13 +5343,13 @@ function seatedPose(ch, seat) {
 
 // Draw part of a pose: [sx, sy, sw, sh] within the pose, at sprite offset (dx, dy).
 function blitPose(ch, f, sx, sy, sw, sh, dx, dy) {
-  ctx.drawImage(ch.img, f.r[0] + sx, f.r[1] + sy, sw, sh, sx - f.ax + dx, sy - f.ay + dy, sw, sh);
+  ctx.drawImage(f.extra ? ch.extraImg : ch.img, f.r[0] + sx, f.r[1] + sy, sw, sh, sx - f.ax + dx, sy - f.ay + dy, sw, sh);
 }
 
 // Draw a character standing at (x, y). `actor` supplies the walk state.
 function drawCharacter(ch, pose, x, y, actor, opts = {}) {
-  if (!spriteReady(ch.img)) return;
   const f = ch.frames[pose.name];
+  if (!spriteReady(f.extra ? ch.extraImg : ch.img)) return;
   const [, , w, h] = f.r;
 
   ctx.save();
@@ -5276,6 +5562,7 @@ function drawHud() {
     const what = nearPoop() ? 'pick up the poop' : 'throw it in the bin';
     pill(isTouch ? `Tap ${nearPoop() ? 'PICK UP' : 'TRASH'} to ${what}` : `Press E to ${what}`, sx, sy - 14, 'rgba(28, 25, 21, 0.8)', '#efe6d8');
   }
+  drawNight();
   if (fight.active) drawFight(); // covers the whole screen
   drawWalkBanner();
   drawBookOverlay();
@@ -5332,6 +5619,11 @@ const DOG_FRAMES = {
   bow: { r: [2028, 0, 116, 102], headRight: false },
   sleep: { r: [2146, 0, 123, 69], headRight: false },
 };
+// More dog art (assets/dog-extra.png): walking toward and away on the leash,
+// playing with the squeaky toy from Walmart, jumping to greet you at the door,
+// and a happy tail-wagging stand.
+Object.assign(DOG_FRAMES, {"leashFront0":{"r":[0,0,59,105],"extra":1},"leashFront1":{"r":[61,0,51,106],"extra":1},"leashFront2":{"r":[114,0,54,105],"extra":1},"leashFront3":{"r":[170,0,52,104],"extra":1},"leashFront4":{"r":[224,0,56,103],"extra":1},"leashFront5":{"r":[282,0,51,105],"extra":1},"leashBack0":{"r":[335,0,58,118],"extra":1},"leashBack1":{"r":[395,0,52,117],"extra":1},"leashBack2":{"r":[449,0,55,118],"extra":1},"leashBack3":{"r":[506,0,48,115],"extra":1},"leashBack4":{"r":[556,0,50,118],"extra":1},"leashBack5":{"r":[608,0,43,116],"extra":1},"toy0":{"r":[653,0,60,102],"extra":1,"headRight":false},"toy1":{"r":[715,0,66,103],"extra":1,"headRight":false},"toy2":{"r":[783,0,64,102],"extra":1,"headRight":false},"toy3":{"r":[849,0,69,92],"extra":1,"headRight":false},"toy4":{"r":[920,0,55,96],"extra":1,"headRight":false},"toy5":{"r":[977,0,79,112],"extra":1,"headRight":false},"greet0":{"r":[1058,0,55,91],"extra":1},"greet1":{"r":[1115,0,62,86],"extra":1},"greet2":{"r":[1179,0,42,103],"extra":1},"greet3":{"r":[1223,0,76,126],"extra":1},"greet4":{"r":[1301,0,46,102],"extra":1},"greet5":{"r":[1349,0,64,90],"extra":1},"happy0":{"r":[1415,0,100,116],"extra":1,"headRight":false},"happy1":{"r":[1517,0,103,116],"extra":1,"headRight":false},"happy2":{"r":[1622,0,106,117],"extra":1,"headRight":false},"happy3":{"r":[1730,0,101,117],"extra":1,"headRight":false},"bone0":{"r":[1833,0,76,68],"extra":1}});
+const dogExtraImg = loadImage('assets/dog-extra.png');
 const DOG_WALK = ['walk1', 'walk2', 'walk3', 'walk4', 'walk5', 'walk6', 'walk7'];
 const DOG_STEP = 16; // map px travelled per walk frame (~10 frames a second at her pace)
 // How long she waits (seconds) before settling into each idle pose
@@ -5373,6 +5665,7 @@ function moveDogToward(tx, ty, speed, dt) {
   dog.x += (dx / d) * step;
   dog.y += (dy / d) * step;
   if (Math.abs(dx) > 0.5) dog.flip = dx < 0;
+  dog.upDown = Math.abs(dy) > Math.abs(dx) * 1.3 ? Math.sign(dy) : 0; // walking toward or away from us
   dog.walkTime += dt * (speed / 260);
   // Faster means longer strides, not just quicker legs
   dog.stride += step / room.scale / Math.sqrt(Math.max(1, speed / (WALK_SPEED * room.scale)));
@@ -5388,6 +5681,18 @@ function updateDog(dt) {
   dog.wagTime += dt;
   dog.excited = Math.max(0, dog.excited - dt);
   if (dog.state === 'home') return; // waiting at home while you're out
+  if (dog.state === 'greet' || dog.state === 'toy') {
+    // Jumping to greet you at the door, then (if you brought it) the new toy
+    dog.walkTime = 0;
+    dog.greetT = (dog.greetT ?? 0) + dt;
+    dog.toyT = (dog.toyT ?? 0) + dt;
+    if (dog.state === 'greet' && dog.greetT > 1.5) {
+      dog.state = dog.newToy ? 'toy' : 'follow';
+      dog.newToy = false;
+      dog.toyT = 0;
+    } else if (dog.state === 'toy' && dog.toyT > 5) dog.state = 'follow';
+    return;
+  }
   if (dog.state === 'stay') {
     // Watching you leave from just inside the door
     if (dog.target && moveDogToward(dog.target.x, dog.target.y, DOG_MAX_SPEED * room.scale * 0.7, dt)) dog.target = null;
@@ -5480,6 +5785,8 @@ function exciteDog() {
 // Which pose to show, and whether her head should point left.
 function dogPose() {
   if (dog.state === 'leash') return leashPose();
+  if (dog.state === 'greet') return { name: 'greet' + (Math.floor(dog.greetT * 8) % 6) };
+  if (dog.state === 'toy') return { name: 'toy' + (Math.floor(dog.toyT * 6) % 6), left: dog.flip };
   if (dog.state === 'home') return { name: 'lie', left: false };
   if (dog.state === 'stay' && dog.walkTime <= 0) return { name: 'front' };
   if (dog.hop) return { name: 'walk4', left: dog.flip };
@@ -5497,6 +5804,8 @@ function dogPose() {
   const above = !side && ty < 0;
   if (dog.excited > 0) return { name: 'bow', left: toLeft };
   const t = dog.idleTime;
+  // With his toy from Walmart, he plays with it for a while instead of lying down
+  if (memory.dudeToy && t > DOG_LIE_AFTER && t < DOG_LIE_AFTER + 6) return { name: 'toy' + (Math.floor(t * 6) % 6), left: toLeft };
   if (t > DOG_SLEEP_AFTER) return { name: 'sleep', left: toLeft };
   if (t > DOG_LIE_AFTER) return { name: 'lie', left: toLeft };
   if (t > DOG_SIT_AFTER) {
@@ -5505,15 +5814,16 @@ function dogPose() {
     return { name: 'front' };
   }
   if (above) return { name: 'back' };
-  if (side) return { name: toLeft ? 'left' : 'right' };
-  return { name: 'idle', left: toLeft };
+  // Standing and wagging
+  return { name: 'happy' + (Math.floor(dog.wagTime * 5) % 4), left: toLeft };
 }
 
 
 function drawDog() {
-  if (!spriteReady(dogImg) || room.store) return;
+  if (!spriteReady(dogImg) || room.store || bedScene.phase) return;
   const pose = dogPose();
   const f = DOG_FRAMES[pose.name];
+  if (f.extra && !spriteReady(dogExtraImg)) return;
   const [fx, fy, fw, fh] = f.r;
   // Mirror when the art faces the other way from where she should look.
   const mirror = f.headRight !== undefined && pose.left !== undefined && pose.left === f.headRight;
@@ -5537,7 +5847,7 @@ function drawDog() {
   ctx.translate(0, -lift - trot);
   ctx.scale(mirror ? -0.5 : 0.5, 0.5 * breathe);
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(dogImg, fx, fy, fw, fh, -fw / 2, -fh, fw, fh);
+  ctx.drawImage(f.extra ? dogExtraImg : dogImg, fx, fy, fw, fh, -fw / 2, -fh, fw, fh);
   ctx.restore();
 }
 
@@ -5717,6 +6027,10 @@ function drawKissHud() {
 
 // Draw everyone back to front so whoever is lower on screen is in front.
 function drawActors() {
+  if (bedScene.phase) {
+    drawBedScene();
+    return;
+  }
   if (handsWalking()) {
     const both = [
       { y: player.y, draw: drawHandsWalk },

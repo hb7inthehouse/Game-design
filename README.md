@@ -74,3 +74,13 @@ Talk to the other one and pick "Bet I could take you in a fight." Choose how har
 - **After:** back home, they react to who won, with choices for a victory kiss, a consolation kiss, "You cheated.", or a rematch. Wins and losses are remembered and come up next time you challenge them.
 
 Sprites are cut from the move sheets into `assets/fight-him.png` and `assets/fight-her.png` (idle, walks, jab, kick, uppercut, spin kick, dash attack, leg sweep, jump, crouch, block, dodge, light and heavy hits, knockdown, get up, special, victory, defeat). Both face right in the art and are mirrored to face left.
+
+
+## More animation
+
+- **Walking toward and away from the camera:** both of them have 6-frame front and back walks (`assets/her-extra.png`, `assets/him-extra.png`), used whenever they walk up or down the screen, including walking hand in hand.
+- **Dialogue faces:** the text box portrait changes with the line: happy, laughing, blushing (kisses, cuddles, "love"...) or pouting (teasing, losing, sulking). See `FACE_WORDS` in `game.js`.
+- **Hudson sitting:** from behind on the couch (and while gaming), facing you on the end of the bed (sitting down through the transition frames), side-on on the chaise. Idle long enough and he sits cross-legged, then leans back and lounges.
+- **Dude** (`assets/dog-extra.png`): walks toward and away from you on the leash in the yard, wags his tail while he waits, jumps up to greet you when you get home from Walmart, and plays with the squeaky toy once you've brought it home.
+- **Shopping cart** (`assets/cart.png`): in Walmart they push a cart together instead of holding hands: grabbing it at the door, pushing it in all four directions, standing with it, resting on it or leaning while you wait, and chatting over it.
+- **Bedtime** (`assets/bed.png`): "Ready for bed?" in the talk menu, then pick cuddling up, holding hands, or just sleeping. The lights go down in the bedroom, they lie down, say goodnight, and sleep (with Dude at the foot of the bed and Zzz floating up). Press E (WAKE UP) and they stir awake into the morning.
