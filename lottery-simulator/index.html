@@ -2,166 +2,821 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Lottery Simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;600;800&display=swap">
 <style>
+  /* Layout: a jungle-night arcade cabinet. Controls on top, one big tap stage, stats and the monkey collection below. */
   :root {
-    --bg: #111318;
-    --panel: #1b1e26;
-    --text: #f2f2f2;
-    --muted: #9aa0ab;
-    --fail: #ff1a1a;
-    --win: #ffd23f;
+    color-scheme: dark;
+    --bg: #0e1511;
+    --panel: #17221c;
+    --panel-2: #1f2d25;
+    --line: #2c3e33;
+    --text: #f4f1e4;
+    --muted: #9cb0a2;
+    --fail: #ff2424;
+    --gold: #ffcf33;
+    --leaf: #63d47f;
+    --common: #b8c6bc;
+    --uncommon: #62b6ff;
+    --rare: #ffcf33;
+    --display: "Bungee", "Impact", "Arial Black", sans-serif;
+    --body: "Rubik", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
   body {
+    margin: 0;
     background: var(--bg);
     color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex;
-    flex-direction: column;
+    font-family: var(--body);
+    font-size: 15px;
+    -webkit-tap-highlight-color: transparent;
     user-select: none;
     -webkit-user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    cursor: pointer;
-    overflow: hidden;
   }
-  header {
-    text-align: center;
-    padding: 20px 16px 8px;
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 18px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
+  header { text-align: center; }
   h1 {
     margin: 0;
-    font-size: clamp(2rem, 7vw, 3.5rem);
-    letter-spacing: 0.02em;
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(2rem, 7vw, 3.4rem);
+    line-height: 1.05;
+    color: var(--gold);
+    text-shadow: 0 3px 0 #7a5a00;
+    text-wrap: balance;
   }
-  .odds {
-    margin-top: 6px;
-    color: var(--muted);
-    font-size: 1rem;
+  .odds { margin: 6px 0 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .odds b { color: var(--text); }
+  .odds .r { color: var(--rare); }
+
+  /* Control bar */
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 10px 12px;
   }
-  main {
-    flex: 1;
+  .wallet { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  #money {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 1.6rem;
+    color: var(--leaf);
+    font-variant-numeric: tabular-nums;
+  }
+  #money.bump { animation: bump 0.5s ease-out; }
+  @keyframes bump { 0% { transform: scale(1.35); color: var(--gold); } 100% { transform: scale(1); } }
+  .price { color: var(--muted); font-size: 0.85rem; }
+  .diff { display: flex; flex-wrap: wrap; gap: 6px; }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 7px 11px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .diff button { display: flex; flex-direction: column; align-items: center; line-height: 1.15; min-width: 74px; }
+  .diff button small { color: var(--muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+  .diff button[aria-pressed="true"] { background: var(--gold); color: #241a00; border-color: var(--gold); }
+  .diff button[aria-pressed="true"] small { color: #4a3800; }
+  .audio { display: flex; gap: 6px; }
+  .audio button[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
+
+  /* Stage */
+  #stage {
+    position: relative;
+    min-height: clamp(300px, 50vh, 540px);
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 16px;
-    min-height: 0;
-  }
-  #result {
     text-align: center;
+    background: radial-gradient(ellipse at 50% 40%, #1c2b22 0%, var(--bg) 70%);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 18px 12px;
+    cursor: pointer;
+    overflow: hidden;
   }
-  #prompt {
-    color: var(--muted);
-    font-size: clamp(1.2rem, 4vw, 1.8rem);
+  #stage:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+  #prompt { color: var(--muted); font-size: clamp(1.15rem, 4vw, 1.6rem); }
+  #prompt b { color: var(--text); }
+
+  #drawing { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #drawing[hidden], #win[hidden] { display: none; }
+  .ball {
+    width: clamp(120px, 30vw, 170px);
+    aspect-ratio: 1;
+    max-width: 100%;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(circle at 35% 30%, #fff 0%, #ffe680 25%, var(--gold) 55%, #b88900 100%);
+    color: #2a1d00;
+    font-family: var(--display);
+    font-size: clamp(1rem, 4.5vw, 1.6rem);
+    font-variant-numeric: tabular-nums;
+    box-shadow: 0 10px 30px rgba(255, 207, 51, 0.25);
+    animation: shake 0.22s linear infinite;
+    overflow: hidden;
+    padding: 8px;
+    word-break: break-all;
   }
+  @keyframes shake {
+    0% { transform: translate(0, 0) rotate(0); }
+    25% { transform: translate(-4px, 2px) rotate(-6deg); }
+    50% { transform: translate(3px, -2px) rotate(5deg); }
+    75% { transform: translate(-2px, -3px) rotate(-3deg); }
+    100% { transform: translate(0, 0) rotate(0); }
+  }
+  .drawlabel { font-family: var(--display); color: var(--muted); letter-spacing: 0.1em; }
+
   #fail {
-    display: none;
     color: var(--fail);
-    font-weight: 900;
-    font-size: clamp(5rem, 28vw, 16rem);
+    font-family: var(--display);
+    font-size: clamp(5rem, 24vw, 13rem);
     line-height: 1;
-    letter-spacing: 0.04em;
-    text-shadow: 0 0 24px rgba(255, 26, 26, 0.55);
+    text-shadow: 0 0 28px rgba(255, 36, 36, 0.6), 0 6px 0 #6d0000;
+    animation: slam 0.25s ease-out;
   }
-  #fail.pop { animation: pop 0.18s ease-out; }
-  @keyframes pop {
-    from { transform: scale(0.85); opacity: 0.4; }
-    to   { transform: scale(1);    opacity: 1; }
-  }
-  #win { display: none; }
-  #win img {
-    max-width: min(80vw, 100%);
-    max-height: 50vh;
+  @keyframes slam { from { transform: scale(1.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  #win { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #winImg {
+    display: block;
+    max-width: min(86vw, 100%);
+    max-height: clamp(180px, 36vh, 380px);
     width: auto;
     height: auto;
+    border-radius: 14px;
+    border: 4px solid var(--rc, var(--common));
+    box-shadow: 0 0 36px var(--rc, var(--common));
+    animation: bounceIn 0.8s cubic-bezier(.2,1.6,.4,1) both, wiggle 1.6s ease-in-out 0.8s infinite;
+  }
+  @keyframes bounceIn {
+    0% { transform: scale(0.2) translateY(60px); opacity: 0; }
+    60% { transform: scale(1.08) translateY(-10px); opacity: 1; }
+    100% { transform: scale(1) translateY(0); }
+  }
+  @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-2.5deg); } 75% { transform: rotate(2.5deg); } }
+  .badge {
+    font-family: var(--display);
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--rc, var(--common));
+    color: #10150f;
+  }
+  .winname { font-weight: 800; font-size: 1.15rem; }
+  #winText {
+    margin: 0;
+    font-family: var(--display);
+    color: var(--gold);
+    font-size: clamp(1.4rem, 5.5vw, 2.4rem);
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+  #win.rare #winText { animation: glow 0.9s ease-in-out infinite alternate; }
+  @keyframes glow { from { text-shadow: 0 0 6px rgba(255, 207, 51, 0.4); } to { text-shadow: 0 0 26px rgba(255, 207, 51, 1); } }
+
+  /* Stats */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--line);
     border-radius: 12px;
-    box-shadow: 0 0 32px rgba(255, 210, 63, 0.35);
-  }
-  #win p {
-    color: var(--win);
-    font-size: clamp(1.6rem, 6vw, 3rem);
-    font-weight: 800;
-    margin: 12px 0 0;
-  }
-  footer {
+    padding: 8px 10px;
     display: flex;
-    justify-content: center;
-    gap: 24px;
-    flex-wrap: wrap;
-    padding: 12px 16px 20px;
-    color: var(--muted);
-    font-size: 0.95rem;
+    flex-direction: column;
+    gap: 2px;
   }
-  footer b { color: var(--text); }
+  .stat b { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+  #luck { margin: 0; text-align: center; color: var(--muted); min-height: 1.3em; }
+  #luck.lucky { color: var(--leaf); }
+  #luck.unlucky { color: #ff8a7a; }
+
+  /* Collection */
+  .collection h2 {
+    margin: 4px 0 10px;
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 1.15rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .collection h2 span { font-family: var(--body); font-size: 0.9rem; color: var(--muted); }
+  .cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+  .card {
+    background: var(--panel);
+    border: 2px solid var(--line);
+    border-radius: 12px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .card.found { border-color: var(--rc); }
+  .thumb {
+    position: relative;
+    aspect-ratio: 1;
+    max-width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--panel-2);
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .card:not(.found) .thumb img { filter: brightness(0); opacity: 0.55; }
+  .card:not(.found) .thumb::after {
+    content: "?";
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-family: var(--display);
+    font-size: 2rem;
+    color: var(--muted);
+  }
+  .count {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.8rem;
+    padding: 1px 6px;
+    border-radius: 6px;
+  }
+  .cname { font-weight: 600; font-size: 0.86rem; overflow-wrap: anywhere; }
+  .crar { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--rc); font-weight: 800; }
+  .codds { font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+  /* Effects + game over */
+  #fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+  #over {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(5, 8, 6, 0.82);
+    display: grid;
+    place-items: center;
+    padding: 16px;
+  }
+  #over[hidden] { display: none; }
+  .overcard {
+    max-width: 420px;
+    width: 100%;
+    background: var(--panel);
+    border: 2px solid var(--fail);
+    border-radius: 18px;
+    padding: 22px 20px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .overcard h2 { margin: 0; font-family: var(--display); font-weight: 400; color: var(--fail); font-size: 2rem; }
+  .overcard p { margin: 0; line-height: 1.5; color: var(--muted); }
+  .overcard p b { color: var(--text); }
+  #again { background: var(--gold); color: #241a00; border-color: var(--gold); font-weight: 800; padding: 11px; font-size: 1.05rem; }
+
+  @media (max-width: 640px) {
+    .bar { justify-content: center; }
+    .diff { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ball, #winImg, #fail, #win.rare #winText, #money.bump { animation: none; }
+  }
 </style>
 </head>
 <body>
+<div class="wrap">
   <header>
     <h1>Lottery Simulator</h1>
-    <div class="odds">Odds of a happy monkey: 1 in 20</div>
+    <p class="odds" id="oddsLine"></p>
   </header>
 
-  <main>
-    <div id="result">
-      <div id="prompt">Click anywhere to play</div>
-      <div id="fail">FAIL</div>
-      <div id="win">
-        <img src="monkey.jpg" alt="A happy monkey">
-        <p>JACKPOT! You won the lottery!</p>
-      </div>
+  <section class="bar" aria-label="Game controls">
+    <div class="wallet">
+      <span class="label">Money</span>
+      <b id="money">$20</b>
+      <span class="price" id="price"></span>
+    </div>
+    <div class="diff" role="group" aria-label="Difficulty" id="diff"></div>
+    <div class="audio">
+      <button id="musicBtn" type="button" aria-pressed="true">♪ Music</button>
+      <button id="sfxBtn" type="button" aria-pressed="true">Sounds</button>
+    </div>
+  </section>
+
+  <main id="stage" tabindex="0" aria-live="polite" aria-label="Tap to buy a ticket">
+    <div id="prompt">Tap anywhere to buy a <b>$1 ticket</b></div>
+    <div id="drawing" hidden>
+      <div class="ball" id="ball">0</div>
+      <div class="drawlabel">DRAWING…</div>
+    </div>
+    <div id="fail" hidden>FAIL</div>
+    <div id="win" hidden>
+      <span class="badge" id="winBadge">COMMON</span>
+      <img id="winImg" alt="">
+      <div class="winname" id="winName"></div>
+      <p id="winText"></p>
     </div>
   </main>
 
-  <footer>
-    <span>Tries: <b id="tries">0</b></span>
-    <span>Wins: <b id="wins">0</b></span>
-  </footer>
+  <section class="stats" aria-label="Stats">
+    <div class="stat"><span class="label">Tickets</span><b id="sTickets">0</b></div>
+    <div class="stat"><span class="label">Monkeys won</span><b id="sWins">0</b></div>
+    <div class="stat"><span class="label">Losing streak</span><b id="sStreak">0</b></div>
+    <div class="stat"><span class="label">Longest streak</span><b id="sLongest">0</b></div>
+  </section>
+  <p id="luck"></p>
+
+  <section class="collection" aria-label="Monkey collection">
+    <h2>Monkey Collection <span id="collCount">0 of 5 found</span></h2>
+    <div class="cards" id="cards"></div>
+  </section>
+</div>
+
+<canvas id="fx"></canvas>
+
+<div id="over" hidden>
+  <div class="overcard" role="dialog" aria-modal="true" aria-labelledby="overTitle">
+    <h2 id="overTitle">BROKE!</h2>
+    <p id="overText"></p>
+    <p>Real lotteries work the same way: they pay out less than they take in, so the longer you play, the more you lose.</p>
+    <button id="again" type="button">Play again with $20</button>
+  </div>
+</div>
 
 <script>
-  const ODDS = 20;
+(() => {
+  // ---------- Game data ----------
+  const START_MONEY = 20;
+  const TICKET = 1;
+  const MODES = {
+    easy:   { label: 'Easy',         odds: 5,         prize: 3 },
+    normal: { label: 'Normal',       odds: 20,        prize: 12 },
+    hard:   { label: 'Hard',         odds: 1000,      prize: 500 },
+    real:   { label: 'Real Lottery', odds: 292201338, prize: 100000000 },
+  };
+  const RARITY = {
+    common:   { label: 'Common',   mult: 1, color: 'var(--common)' },
+    uncommon: { label: 'Uncommon', mult: 2, color: 'var(--uncommon)' },
+    rare:     { label: 'Rare',     mult: 5, color: 'var(--rare)' },
+  };
+  // When you win, which monkey you get is picked by weight (weights add up to 100).
+  const MONKEYS = [
+    { id: 'finger',   name: 'Finger Hugger',   rarity: 'common',   weight: 34, src: 'monkeys/finger.jpg' },
+    { id: 'pocket',   name: 'Pocket Marmoset', rarity: 'common',   weight: 34, src: 'monkeys/pocket.jpg' },
+    { id: 'bignose',  name: 'Big Nose',        rarity: 'uncommon', weight: 14, src: 'monkeys/bignose.jpg' },
+    { id: 'wildhair', name: 'Wild Hair',       rarity: 'uncommon', weight: 13, src: 'monkeys/wildhair.jpg' },
+    { id: 'selfie',   name: 'Selfie Grin',     rarity: 'rare',     weight: 5,  src: 'monkeys/selfie.jpg' },
+  ];
+  const TOTAL_WEIGHT = MONKEYS.reduce((s, m) => s + m.weight, 0);
 
-  // Unbiased random integer in [0, ODDS) using the browser's crypto RNG.
-  // Rejection sampling avoids the slight bias of a plain modulo.
-  const LIMIT = Math.floor(2 ** 32 / ODDS) * ODDS;
+  // ---------- Random numbers ----------
+  // Unbiased random integer in [0, n) from the browser's crypto RNG (rejection sampling).
   const buf = new Uint32Array(1);
-  function roll() {
-    let n;
-    do {
-      crypto.getRandomValues(buf);
-      n = buf[0];
-    } while (n >= LIMIT);
-    return n % ODDS;
+  function randInt(n) {
+    const limit = Math.floor(2 ** 32 / n) * n;
+    let x;
+    do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+    return x % n;
+  }
+  function pickMonkey() {
+    let r = randInt(TOTAL_WEIGHT);
+    for (const m of MONKEYS) { if (r < m.weight) return m; r -= m.weight; }
+    return MONKEYS[0];
   }
 
-  const prompt = document.getElementById('prompt');
-  const fail = document.getElementById('fail');
-  const win = document.getElementById('win');
-  const triesEl = document.getElementById('tries');
-  const winsEl = document.getElementById('wins');
-  let tries = 0, wins = 0;
+  // ---------- Saved settings (per browser, optional) ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
 
-  function play() {
-    tries++;
-    triesEl.textContent = tries.toLocaleString();
-    prompt.style.display = 'none';
+  // ---------- State ----------
+  let mode = store.get('lotto.mode', 'normal');
+  if (!MODES[mode]) mode = 'normal';
+  let musicOn = store.get('lotto.music', true);
+  let sfxOn = store.get('lotto.sfx', true);
+  const collection = store.get('lotto.collection', {});
+  let money, tickets, wins, streak, longest, sinceWin, lastWinTook;
+  let busy = false;
+  function resetRun() {
+    money = START_MONEY; tickets = 0; wins = 0; streak = 0; longest = 0; sinceWin = 0; lastWinTook = null;
+  }
+  resetRun();
 
-    if (roll() === 0) {           // exactly 1 chance in 20
-      wins++;
-      winsEl.textContent = wins.toLocaleString();
-      fail.style.display = 'none';
-      win.style.display = 'block';
+  // ---------- DOM ----------
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => Math.round(n).toLocaleString('en-US');
+  const money$ = (n) => '$' + fmt(n);
+
+  function show(which) {
+    for (const id of ['prompt', 'drawing', 'fail', 'win']) $(id).hidden = id !== which;
+  }
+
+  function renderOdds() {
+    const m = MODES[mode];
+    const rareOdds = m.odds * TOTAL_WEIGHT / MONKEYS.find(x => x.rarity === 'rare').weight;
+    $('oddsLine').innerHTML =
+      `Odds of a happy monkey: <b>1 in ${fmt(m.odds)}</b> · ` +
+      `<span class="r">Rare monkey: 1 in ${fmt(rareOdds)}</span>`;
+    $('price').textContent = `Ticket ${money$(TICKET)} · Prize ${money$(m.prize)}+`;
+    for (const b of $('diff').children) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+  }
+
+  function renderStats() {
+    $('money').textContent = money$(money);
+    $('sTickets').textContent = fmt(tickets);
+    $('sWins').textContent = fmt(wins);
+    $('sStreak').textContent = fmt(streak);
+    $('sLongest').textContent = fmt(longest);
+    const n = MODES[mode].odds;
+    const luck = $('luck');
+    luck.className = '';
+    if (lastWinTook == null) {
+      luck.textContent = `On average it takes ${fmt(n)} tickets to win a monkey.`;
+    } else if (lastWinTook < n) {
+      luck.className = 'lucky';
+      luck.textContent = `Your last monkey took ${fmt(lastWinTook)} ticket${lastWinTook === 1 ? '' : 's'}. Lucky! The average is ${fmt(n)}.`;
+    } else if (lastWinTook > n) {
+      luck.className = 'unlucky';
+      luck.textContent = `Your last monkey took ${fmt(lastWinTook)} tickets. Unlucky! The average is ${fmt(n)}.`;
     } else {
-      win.style.display = 'none';
-      fail.style.display = 'block';
-      fail.classList.remove('pop');
-      void fail.offsetWidth;        // restart the pop animation
-      fail.classList.add('pop');
+      luck.textContent = `Your last monkey took ${fmt(lastWinTook)} tickets, right on the average.`;
     }
   }
 
-  document.addEventListener('pointerdown', play);
+  function renderCollection() {
+    const n = MODES[mode].odds;
+    const cards = $('cards');
+    cards.innerHTML = '';
+    let found = 0;
+    for (const m of MONKEYS) {
+      const count = collection[m.id] || 0;
+      if (count) found++;
+      const card = document.createElement('div');
+      card.className = 'card' + (count ? ' found' : '');
+      card.style.setProperty('--rc', RARITY[m.rarity].color);
+      card.innerHTML = `
+        <div class="thumb"><img src="${m.src}" alt="${count ? m.name : 'Not found yet'}">${count ? `<span class="count">×${fmt(count)}</span>` : ''}</div>
+        <div class="cname">${count ? m.name : '???'}</div>
+        <div class="crar">${RARITY[m.rarity].label}</div>
+        <div class="codds">1 in ${fmt(n * TOTAL_WEIGHT / m.weight)} tickets</div>`;
+      cards.appendChild(card);
+    }
+    $('collCount').textContent = `${found} of ${MONKEYS.length} found`;
+  }
+
+  // Difficulty buttons
+  for (const [key, m] of Object.entries(MODES)) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.mode = key;
+    b.innerHTML = `${m.label}<small>1 in ${fmt(m.odds)}</small>`;
+    b.addEventListener('click', () => {
+      if (busy) return;
+      mode = key;
+      store.set('lotto.mode', mode);
+      renderOdds(); renderStats(); renderCollection();
+    });
+    $('diff').appendChild(b);
+  }
+
+  // ---------- Audio (all synthesized, no files) ----------
+  let ac = null, master, musicGain, sfxGain, noiseBuf;
+  function ensureAudio() {
+    if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ac = new AC();
+    master = ac.createGain(); master.gain.value = 0.9; master.connect(ac.destination);
+    musicGain = ac.createGain(); musicGain.gain.value = musicOn ? 0.5 : 0; musicGain.connect(master);
+    sfxGain = ac.createGain(); sfxGain.gain.value = sfxOn ? 1 : 0; sfxGain.connect(master);
+    noiseBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.2), ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    startMusic();
+  }
+  const NOTE = { C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11 };
+  function freq(name) {
+    const m = /^([A-G]#?)(\d)$/.exec(name);
+    const midi = 12 * (+m[2] + 1) + NOTE[m[1]];
+    return 440 * 2 ** ((midi - 69) / 12);
+  }
+  function tone(dest, f, t, dur, { type = 'square', vol = 0.2, attack = 0.005, vibrato = 0 } = {}) {
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (vibrato) {
+      const lfo = ac.createOscillator(), lg = ac.createGain();
+      lfo.frequency.value = 6; lg.gain.value = vibrato;
+      lfo.connect(lg); lg.connect(o.frequency);
+      lfo.start(t); lfo.stop(t + dur + 0.05);
+    }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+  function hat(t, vol) {
+    const s = ac.createBufferSource(); s.buffer = noiseBuf;
+    const f = ac.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7000;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    s.connect(f); f.connect(g); g.connect(musicGain);
+    s.start(t); s.stop(t + 0.06);
+  }
+
+  // Sound effects
+  function sfxTick() {
+    if (!ac) return;
+    tone(sfxGain, 900 + Math.random() * 500, ac.currentTime, 0.04, { vol: 0.06 });
+  }
+  function sfxFail() {
+    if (!ac) return;
+    const t = ac.currentTime;
+    // Sad trombone: wah, wah, wah, waaaah
+    const notes = ['G3', 'F#3', 'F3', 'E3'];
+    notes.forEach((n, i) => {
+      const last = i === notes.length - 1;
+      tone(sfxGain, freq(n), t + i * 0.28, last ? 0.9 : 0.26, { type: 'sawtooth', vol: 0.12, attack: 0.03, vibrato: last ? 6 : 0 });
+    });
+  }
+  function sfxWin(rarity) {
+    if (!ac) return;
+    const t = ac.currentTime;
+    duckMusic(rarity === 'rare' ? 4.2 : 2.6);
+    const run = ['C5', 'E5', 'G5', 'C6', 'G5', 'C6'];
+    run.forEach((n, i) => tone(sfxGain, freq(n), t + i * 0.09, 0.14, { vol: 0.14 }));
+    const chordAt = t + run.length * 0.09;
+    ['C5', 'E5', 'G5', 'C6'].forEach(n => tone(sfxGain, freq(n), chordAt, 1.1, { type: 'triangle', vol: 0.16 }));
+    // coin "ka-ching"
+    tone(sfxGain, freq('B5'), chordAt + 0.05, 0.08, { vol: 0.1 });
+    tone(sfxGain, freq('E6'), chordAt + 0.13, 0.5, { vol: 0.1 });
+    if (rarity !== 'common') {
+      ['D6', 'F6', 'A6', 'D7'].forEach((n, i) => tone(sfxGain, freq(n), chordAt + 0.5 + i * 0.07, 0.12, { type: 'triangle', vol: 0.09 }));
+    }
+    if (rarity === 'rare') {
+      // Extra-long royal fanfare for the rare monkey
+      const fan = [['G5', 0.18], ['G5', 0.18], ['G5', 0.18], ['C6', 0.5], ['A5', 0.18], ['B5', 0.18], ['C6', 0.9]];
+      let at = chordAt + 1.0;
+      for (const [n, d] of fan) {
+        tone(sfxGain, freq(n), at, d * 0.95, { vol: 0.14 });
+        tone(sfxGain, freq(n) / 2, at, d * 0.95, { type: 'triangle', vol: 0.1 });
+        at += d;
+      }
+      ['C5', 'E5', 'G5', 'C6', 'E6'].forEach(n => tone(sfxGain, freq(n), at, 1.4, { type: 'triangle', vol: 0.1 }));
+    }
+  }
+
+  // Background music: a bouncy jungle loop, scheduled slightly ahead of time.
+  const MELODY = [
+    'E5','G5','A5','G5','E5','D5','C5','D5',
+    'E5','G5','A5','C6','A5','G5','E5', null,
+    'D5','E5','G5','E5','D5','C5','A4','C5',
+    'D5','E5','D5','C5','A4', null,'C5', null,
+  ];
+  const BASS = ['C3', 'A2', 'F2', 'G2'];
+  const STEP = 60 / 132 / 2; // eighth notes at 132 bpm
+  let step = 0, nextAt = 0, musicTimer = null;
+  function startMusic() {
+    if (!ac || musicTimer) return;
+    nextAt = ac.currentTime + 0.1;
+    musicTimer = setInterval(() => {
+      if (nextAt < ac.currentTime) nextAt = ac.currentTime + 0.05; // tab was in the background
+      while (nextAt < ac.currentTime + 0.15) {
+        const i = step % MELODY.length;
+        const bar = Math.floor(i / 8);
+        if (MELODY[i]) tone(musicGain, freq(MELODY[i]), nextAt, STEP * 0.9, { type: 'square', vol: 0.07 });
+        if (i % 2 === 0) {
+          const b = freq(BASS[bar]) * (i % 4 === 2 ? 2 : 1);
+          tone(musicGain, b, nextAt, STEP * 1.6, { type: 'triangle', vol: 0.16 });
+        } else {
+          hat(nextAt, 0.035);
+        }
+        nextAt += STEP;
+        step++;
+      }
+    }, 25);
+  }
+  function duckMusic(seconds) {
+    if (!ac || !musicOn) return;
+    const t = ac.currentTime;
+    musicGain.gain.cancelScheduledValues(t);
+    musicGain.gain.setValueAtTime(musicGain.gain.value, t);
+    musicGain.gain.linearRampToValueAtTime(0.08, t + 0.1);
+    musicGain.gain.setValueAtTime(0.08, t + seconds);
+    musicGain.gain.linearRampToValueAtTime(0.5, t + seconds + 1);
+  }
+
+  function renderAudioButtons() {
+    $('musicBtn').setAttribute('aria-pressed', String(musicOn));
+    $('sfxBtn').setAttribute('aria-pressed', String(sfxOn));
+  }
+  $('musicBtn').addEventListener('click', () => {
+    musicOn = !musicOn; store.set('lotto.music', musicOn); renderAudioButtons();
+    ensureAudio();
+    if (ac) {
+      musicGain.gain.cancelScheduledValues(ac.currentTime);
+      musicGain.gain.setTargetAtTime(musicOn ? 0.5 : 0, ac.currentTime, 0.05);
+    }
+  });
+  $('sfxBtn').addEventListener('click', () => {
+    sfxOn = !sfxOn; store.set('lotto.sfx', sfxOn); renderAudioButtons();
+    ensureAudio();
+    if (ac) sfxGain.gain.setTargetAtTime(sfxOn ? 1 : 0, ac.currentTime, 0.02);
+  });
+
+  // ---------- Confetti + bananas ----------
+  const cv = $('fx'), cx = cv.getContext('2d');
+  let parts = [], fxRunning = false;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function sizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  addEventListener('resize', sizeCanvas); sizeCanvas();
+  function celebrate(rarity) {
+    const count = reduceMotion ? 20 : rarity === 'rare' ? 160 : rarity === 'uncommon' ? 90 : 60;
+    const colors = rarity === 'rare'
+      ? ['#ffcf33', '#fff2a8', '#ffb000', '#ffffff']
+      : ['#ffcf33', '#63d47f', '#62b6ff', '#ff6fa8', '#ffffff'];
+    for (let i = 0; i < count; i++) {
+      const banana = Math.random() < 0.35;
+      parts.push({
+        x: Math.random() * innerWidth,
+        y: -20 - Math.random() * innerHeight * 0.6,
+        vx: (Math.random() - 0.5) * 3,
+        vy: 2 + Math.random() * 3,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() - 0.5) * 0.25,
+        size: banana ? 22 + Math.random() * 14 : 6 + Math.random() * 6,
+        banana,
+        color: colors[i % colors.length],
+      });
+    }
+    if (!fxRunning) { fxRunning = true; requestAnimationFrame(fxLoop); }
+  }
+  function fxLoop() {
+    cx.clearRect(0, 0, innerWidth, innerHeight);
+    for (const p of parts) {
+      p.vy += 0.06; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      cx.save(); cx.translate(p.x, p.y); cx.rotate(p.rot);
+      if (p.banana) {
+        cx.font = `${p.size}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+        cx.textAlign = 'center'; cx.textBaseline = 'middle';
+        cx.fillText('🍌', 0, 0);
+      } else {
+        cx.fillStyle = p.color;
+        cx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+      }
+      cx.restore();
+    }
+    parts = parts.filter(p => p.y < innerHeight + 60);
+    if (parts.length) requestAnimationFrame(fxLoop);
+    else { fxRunning = false; cx.clearRect(0, 0, innerWidth, innerHeight); }
+  }
+
+  // ---------- Playing ----------
+  function setDiffDisabled(v) { for (const b of $('diff').children) b.disabled = v; }
+
+  function buyTicket() {
+    if (busy || !$('over').hidden) return;
+    ensureAudio();
+    if (money < TICKET) { gameOver(); return; }
+    busy = true;
+    money -= TICKET; tickets++; sinceWin++;
+    renderStats();
+    setDiffDisabled(true);
+
+    const n = MODES[mode].odds;
+    const digits = String(n - 1).length;
+    show('drawing');
+    const spin = setInterval(() => {
+      $('ball').textContent = String(randInt(n)).padStart(digits, '0');
+      if (sfxOn) sfxTick();
+    }, 75);
+    setTimeout(() => {
+      clearInterval(spin);
+      const result = randInt(n); // you win only if this is exactly 0
+      $('ball').textContent = String(result).padStart(digits, '0');
+      finish(result === 0);
+    }, reduceMotion ? 300 : 1000);
+  }
+
+  function restartAnim(el) { el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; }
+
+  function finish(won) {
+    if (won) {
+      const m = pickMonkey();
+      const r = RARITY[m.rarity];
+      const prize = MODES[mode].prize * r.mult;
+      money += prize; wins++;
+      lastWinTook = sinceWin; sinceWin = 0; streak = 0;
+      collection[m.id] = (collection[m.id] || 0) + 1;
+      store.set('lotto.collection', collection);
+
+      const win = $('win');
+      win.style.setProperty('--rc', r.color);
+      win.classList.toggle('rare', m.rarity === 'rare');
+      $('winBadge').textContent = r.label.toUpperCase();
+      $('winName').textContent = m.name;
+      $('winText').textContent = m.rarity === 'rare' ? `RARE MONKEY! +${money$(prize)}` : `JACKPOT! +${money$(prize)}`;
+      const img = $('winImg');
+      img.src = m.src; img.alt = m.name;
+      restartAnim(img);
+      show('win');
+      sfxWin(m.rarity);
+      celebrate(m.rarity);
+      const mEl = $('money');
+      mEl.classList.remove('bump'); void mEl.offsetWidth; mEl.classList.add('bump');
+      renderCollection();
+    } else {
+      streak++; longest = Math.max(longest, streak);
+      restartAnim($('fail'));
+      show('fail');
+      sfxFail();
+    }
+    renderStats();
+    setDiffDisabled(false);
+    busy = false;
+    if (money < TICKET) setTimeout(gameOver, 1300);
+  }
+
+  function gameOver() {
+    $('overText').innerHTML =
+      `You bought <b>${fmt(tickets)}</b> ticket${tickets === 1 ? '' : 's'} and won <b>${fmt(wins)}</b> monkey${wins === 1 ? '' : 's'}. ` +
+      `Your longest losing streak was <b>${fmt(longest)}</b>.`;
+    $('over').hidden = false;
+    $('again').focus();
+  }
+  $('again').addEventListener('click', () => {
+    resetRun();
+    $('over').hidden = true;
+    show('prompt');
+    renderStats();
+    $('stage').focus();
+  });
+
+  // Tap anywhere (except the buttons and panels) to play.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('button, .bar, .collection, #over')) return;
+    buyTicket();
+  });
+  document.addEventListener('keydown', (e) => {
+    if ((e.key === ' ' || e.key === 'Enter') && !e.target.closest('button')) {
+      e.preventDefault();
+      buyTicket();
+    }
+  });
+
+  renderAudioButtons();
+  renderOdds();
+  renderStats();
+  renderCollection();
+})();
 </script>
 </body>
 </html>
