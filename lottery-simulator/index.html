@@ -100,7 +100,7 @@
 <body>
   <header>
     <h1>Lottery Simulator</h1>
-    <div class="odds">Odds of a happy monkey: 1 in 292,201,338</div>
+    <div class="odds">Odds of a happy monkey: 1 in 20</div>
   </header>
 
   <main>
@@ -120,7 +120,7 @@
   </footer>
 
 <script>
-  const ODDS = 292201338;
+  const ODDS = 20;
 
   // Unbiased random integer in [0, ODDS) using the browser's crypto RNG.
   // Rejection sampling avoids the slight bias of a plain modulo.
@@ -147,7 +147,7 @@
     triesEl.textContent = tries.toLocaleString();
     prompt.style.display = 'none';
 
-    if (roll() === 0) {           // exactly 1 chance in 292,201,338
+    if (roll() === 0) {           // exactly 1 chance in 20
       wins++;
       winsEl.textContent = wins.toLocaleString();
       fail.style.display = 'none';
