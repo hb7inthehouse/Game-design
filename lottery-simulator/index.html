@@ -179,9 +179,9 @@
   }
   #screen.glow { box-shadow: inset 0 0 6cqw rgba(255, 207, 51, 0.6); }
 
-  #sign { position: relative; width: 56cqw; display: grid; place-items: center; }
-  .signtext { font-family: var(--pixel); color: var(--gold); font-size: 2.4cqw; line-height: 1.5; text-shadow: 0 0.3cqw 0 #5a0d00; animation: blink 1.1s steps(2) infinite; }
-  .signtext small { display: block; font-size: 1.45cqw; color: var(--cream); }
+  #sign { position: relative; width: 58cqw; display: grid; place-items: center; }
+  .signtext { font-family: var(--pixel); color: var(--gold); font-size: 2.6cqw; line-height: 1.5; text-shadow: 0 0.3cqw 0 #5a0d00; animation: blink 1.1s steps(2) infinite; }
+  .signtext small { display: block; font-size: 1.85cqw; color: var(--cream); }
   @keyframes blink { 50% { opacity: 0.4; } }
 
   #drawing { display: flex; flex-direction: column; align-items: center; gap: 1.4cqw; }
@@ -221,8 +221,8 @@
   .wininfo { display: flex; flex-direction: column; align-items: center; gap: 1cqw; min-width: 0; }
   #winText { width: 100%; height: auto; animation: slam 0.35s steps(6) 0.2s both; }
   #winBig { font-family: var(--pixel); font-size: 5.2cqw; color: var(--gold); text-shadow: 0 0.6cqw 0 #8a1a5a, 0 0 3cqw rgba(255, 79, 168, 0.9); animation: slam 0.35s steps(6) 0.2s both; }
-  .badge { font-family: var(--pixel); font-size: 1.7cqw; padding: 0.6cqw 1.2cqw; border-radius: 0.6cqw; background: var(--rc, var(--common)); color: #120c2e; }
-  #winName { font-family: var(--pixel); font-size: 2.2cqw; color: var(--cream); line-height: 1.3; }
+  .badge { font-family: var(--pixel); font-size: 2cqw; padding: 0.6cqw 1.2cqw; border-radius: 0.6cqw; background: var(--rc, var(--common)); color: #120c2e; }
+  #winName { font-family: var(--pixel); font-size: 2.5cqw; color: var(--cream); line-height: 1.3; }
 
   .marquee {
     left: 22%; top: 13.6%; width: 56%; height: 7.4%;
@@ -232,7 +232,7 @@
     pointer-events: none; line-height: 1.5; text-align: center;
   }
   .marquee b { font-weight: 400; font-size: 3.6cqw; }
-  .marquee span { font-size: 2cqw; color: var(--cream); }
+  .marquee span { font-size: 2.3cqw; color: var(--cream); }
   .marquee span.lucky { color: var(--led); }
   #money {
     left: 64.8%; top: 58.7%; width: 19.4%; height: 3.8%;
@@ -340,6 +340,7 @@
   .rinfo { min-width: 0; line-height: 1; }
   .rinfo b { display: block; font-weight: 400; font-size: 19px; color: var(--cream); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rinfo small { display: block; font-size: 16px; color: var(--muted); }
+  .row.wide .rinfo b { white-space: normal; }
   .rinfo .up { color: var(--led); } .rinfo .down { color: #ff8a7a; }
   .ract { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
   .prog { height: 8px; background: #241b40; border: 1px solid #000; margin-top: 3px; }
@@ -410,7 +411,8 @@
     .cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .tabs { grid-template-columns: repeat(6, minmax(0, 1fr)); }
     #tabBody { max-height: none; }
-    .title { width: min(78vw, 380px); }
+    .wrap { padding-top: calc(60px + env(safe-area-inset-top, 0px)); }
+    .title { width: min(78vw, 360px); }
     .audio, #testBtn { position: absolute; }
   }
   @media (max-width: 520px) {
@@ -418,7 +420,26 @@
     .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .sbtn { width: 44px; }
-    .title { width: min(64vw, 300px); }
+    #testBtn { font-size: 9px; padding: 8px 9px; }
+    .title { width: min(82vw, 320px); }
+    .wrap { gap: 2px; padding-bottom: 32px; }
+    .table { gap: 12px; }
+    .panel { padding: 10px; }
+    /* compact stat chips instead of the wide brass plaques */
+    .plaques { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+    .plaque {
+      aspect-ratio: auto; background: #241b40; border: 2px solid var(--gold-dark); border-radius: 6px;
+      flex-direction: column; justify-content: center; gap: 3px; padding: 6px 2px;
+    }
+    .plaque span { font-size: 14px; }
+    .plaque b { font-size: 22px; }
+    .meter { margin-top: 8px; }
+    .plate { min-height: 38px; font-size: 16px; }
+    #life { display: none; }
+    .card .meta { font-size: 14px; }
+    .card .perk { font-size: 14px; }
+    .row { grid-template-columns: 36px minmax(0, 1fr) auto; }
+    .thumb { width: 36px; height: 36px; }
   }
   @media (prefers-reduced-motion: reduce) {
     #winImg, #winText, #winBig, #failImg, .signtext, #lever.pull, #money.bump, .card .frame, .card .frame .border, .reel.stopped { animation: none !important; }
@@ -476,7 +497,7 @@
 
     <div class="machine" id="machine" role="button" tabindex="0" aria-label="Slot machine: tap or pull the lever to buy a ticket">
       <div id="screen" aria-live="polite">
-        <div id="prompt"><div id="sign" class="spr"><div class="signtext">PULL THE LEVER<small id="signSmall">OR TAP ANYWHERE · $1</small></div></div></div>
+        <div id="prompt"><div id="sign" class="spr"><div class="signtext">PULL THE LEVER<small id="signSmall">TAP ANYWHERE · $1</small></div></div></div>
         <div id="drawing" hidden>
           <div class="reels"><div class="reel spr"></div><div class="reel spr"></div><div class="reel spr"></div></div>
           <div class="drawlabel" id="ball">DRAWING…</div>
@@ -878,7 +899,7 @@
     const price = ticketPrice();
     const count = S.up.triple && S.up.tripleOn ? 3 : 1;
     $('slotHint').textContent = (count > 1 ? '3×' : '') + money$(price);
-    $('signSmall').textContent = testOn ? 'TEST MODE · EVERY PULL WINS' : `OR TAP ANYWHERE · ${count > 1 ? '3× ' : ''}${money$(price)}`;
+    $('signSmall').textContent = testOn ? 'TEST · EVERY PULL WINS' : `TAP ANYWHERE · ${count > 1 ? '3× ' : ''}${money$(price)}`;
     $('testBtn').setAttribute('aria-pressed', String(testOn));
     $('testBtn').textContent = testOn ? 'TEST: ON' : 'TEST: OFF';
     $('money').textContent = shortMoney(S.money);
@@ -947,7 +968,7 @@
           ? `<div class="frame"><img class="art" src="${m.src}" alt="${esc(m.name)}" style="left:${wl}%;top:${wt}%;width:${ww}%;height:${wh}%;object-position:${m.pos}${has ? '' : ';filter:grayscale(1) brightness(.6)'}">
                <img class="border" src="${r.frame}" alt=""><div class="nm" style="top:${r.name[0]}%;height:${r.name[1]}%">${esc(m.name.toUpperCase())}</div><div class="tags">${tags}</div></div>`
           : `<div class="frame"><img class="border" src="${LOCKED_FRAME}" alt="Not found yet"></div>`) +
-        `<div class="meta"><b>${r.label}</b> · 1 in ${odds}</div>` +
+        `<div class="meta"><b>${r.label}</b><br>1 in ${odds}</div>` +
         `<div class="perk">${S.seen[m.id] ? esc(PERKS[m.perk].text(PERKS[m.perk].vals[c.lvl - 1])) : '???'}</div>${lvlBtn}</div>`;
     }
     return h + '</div>';
