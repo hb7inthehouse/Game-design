@@ -1,0 +1,52 @@
+Before pasting: attach these reference images from the first art set so the new art matches them: the slot machine (T2), the title sign (T3) and the five monkey portraits (T8).
+
+---------------------------------------------------------------
+
+I'm remaking the animation art for my 16-bit browser game "Lottery Simulator". The images I've attached are the existing art; everything new must match their style exactly: same 16-bit SNES-era pixel art, same chunky dark-purple outlines, same palette (casino red #7A1028, gold #FFCF33, navy #141433, purple #2A1A4A, chrome #C8D0E0, neon pink #FF4FA8, cyan #3FE0FF, FAIL red #FF2424).
+
+The first attempt failed because every animation was squeezed into one image, the frames were tiny, the background was white, and the frames didn't line up. So follow these rules strictly:
+
+RULES FOR EVERY IMAGE
+1. ONE asset per image. Never put two assets in the same image. After each image, tell me its ID and wait for me to say "next".
+2. Landscape image, 1536 x 1024.
+3. Background: solid flat magenta #FF00FF everywhere, with no gradient, texture, shadow, floor, glow or vignette. (For B7, which has pink in it, use solid flat green #00FF00 instead.)
+4. No text, numbers, labels, frame borders, grid lines or watermarks anywhere.
+5. Big, crisp pixel art: the subject fills most of its cell, hard pixel edges, no blur, no anti-aliasing, no soft glows. Use solid pixel shapes for any glow.
+6. For multi-frame assets: use the grid I give, frames read left-to-right then top-to-bottom, every cell exactly the same size, the subject the same size in every cell, and anchored to the same point in every cell (same baseline / same centre). Draw the SAME drawing in every frame and change ONLY the part that moves. Leave an empty margin of at least 40 pixels inside every cell edge so frames never touch.
+
+=== STILL PARTS (I will animate these in code) ===
+
+B1. LEVER: the slot machine's pull lever from the attached slot machine, alone: a chrome stick with a big shiny red ball on top, perfectly vertical, centred, tall (fills 80% of the image height). No base or bracket. One image.
+
+B2. SIREN DOME: the gold-based red dome light from the top of the attached slot machine, alone, centred, front view, large. Plain red with a white pixel highlight. No light rays. One image.
+
+B3. REEL STRIP: one tall vertical slot-machine reel strip, centred, filling the full image height: a white/cream strip with 6 symbols stacked top to bottom with equal spacing: banana, cherries, gold coin, monkey face, red X, gold star. Each symbol fills the strip's width. No reel window or frame around it.
+
+B4. COIN: a single gold coin with a banana stamped on it, face-on, centred, large (fills 70% of the image height). One image.
+
+B5. COIN PILES: three piles of gold coins side by side, left to right: small (5 coins), medium (12 coins), large overflowing pile (30 coins). Bottoms all on the same baseline.
+
+B6. PARTICLES: one row of 6 separate items with lots of space between them: a banana, a gold 4-point sparkle star, and four small square confetti pieces (gold, pink, cyan, green). All large and crisp.
+
+B7. NEON BANANA SIGN (green background): a glowing pink neon-tube banana sign, front view, centred, large. Draw the glow as solid pixel bands, not blur. One image.
+
+B8. WALLET: two wallets side by side on the same baseline: left = brown leather wallet closed; right = the same wallet hanging open and completely empty.
+
+B9. MOTH: one small cartoon moth, drawn twice side by side: wings up, wings down. Same size and position in both.
+
+B10. SAD TROMBONE: a gold trombone, side view, droopy and sad, centred, large. One image.
+
+=== CHARACTER ANIMATIONS (frames) ===
+
+B11-B15. MONKEY CELEBRATION, one image per monkey, using the attached portraits:
+B11 Finger Hugger, B12 Pocket Marmoset, B13 Big Nose, B14 Wild Hair, B15 Selfie Grin (the rare one).
+Grid: 2 columns x 2 rows (4 frames, each cell 768 x 512).
+The monkey's head and shoulders, the same size and position in every cell, bottom edge of the body touching the same baseline:
+frame 1 = happy, eyes open; frame 2 = head tilted left with a big grin; frame 3 = eyes squeezed shut, laughing; frame 4 = head tilted right with a big grin.
+Keep the face, fur and colours identical to the attached portrait.
+
+B16. PATRON: a dark purple silhouette of a person sitting on a stool at a small slot machine, side view.
+Grid: 2 columns x 1 row (2 frames, each cell 768 x 1024): frame 1 = hand on the lever, lever up; frame 2 = lever pulled down.
+Everything except the arm and lever is identical in both frames.
+
+Start with B1.
