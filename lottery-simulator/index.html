@@ -9,12 +9,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
 <style>
-  /* Layout: first-person seat at a 16-bit slot machine. Casino fills the back; stats on the left, collection on the right (stacked below on phones). */
+  /* Layout: first-person seat at a 16-bit slot machine. Casino fills the back; stats on the left, album/market/zoo/shop tabs on the right (stacked below on phones). */
   :root {
     color-scheme: dark;
     --night: #141433;
     --plum: #2a1a4a;
-    --panel: rgba(20, 16, 44, 0.86);
+    --panel: rgba(20, 16, 44, 0.9);
     --gold: #ffcf33;
     --gold-dark: #9a6a00;
     --cream: #fff2d0;
@@ -26,10 +26,12 @@
     --common: #c8d0e0;
     --uncommon: #4fa3ff;
     --rare: #ffcf33;
+    --legend: #ff4fa8;
     --pixel: "Press Start 2P", "Courier New", monospace;
     --term: "VT323", "Courier New", monospace;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html { background: var(--night); overflow-x: clip; }
   body {
     margin: 0;
@@ -44,7 +46,6 @@
     -webkit-user-select: none;
   }
   body::after {
-    /* darken the casino a touch so the machine pops */
     content: "";
     position: fixed;
     inset: 0;
@@ -52,11 +53,9 @@
     pointer-events: none;
     z-index: 0;
   }
-  img { image-rendering: auto; }
 
-  /* Sprite sheets (A1-A15): one row of frames, stepped by script */
+  /* Sprite sheets: one row of frames, stepped by script */
   .spr { background-repeat: no-repeat; image-rendering: pixelated; }
-  .spr[hidden] { display: none !important; }
 
   /* Casino scene: background art plus ambient loops, scaled like background-size: cover */
   #scene { position: fixed; inset: 0; overflow: hidden; z-index: 0; pointer-events: none; }
@@ -68,10 +67,11 @@
   }
   #bgbox .bg { display: block; width: 100%; height: 100%; }
   #bgbox .amb { position: absolute; }
+
   .wrap {
     position: relative;
     z-index: 1;
-    max-width: 1400px;
+    max-width: 1440px;
     margin: 0 auto;
     padding-left: max(16px, env(safe-area-inset-left, 0px));
     padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -83,7 +83,7 @@
   }
   header { width: 100%; display: flex; justify-content: center; }
   header h1 { margin: 0; line-height: 0; }
-  .title { display: block; width: min(92vw, 420px); height: auto; filter: drop-shadow(0 6px 10px rgba(0,0,0,0.5)); }
+  .title { display: block; width: min(92vw, 400px); height: auto; filter: drop-shadow(0 6px 10px rgba(0,0,0,0.5)); }
 
   /* Music / sound buttons */
   .audio {
@@ -94,60 +94,62 @@
     display: flex;
     gap: 6px;
   }
-  .sbtn {
-    width: 54px;
-    padding: 0;
-    border: 0;
-    background: none;
-    cursor: pointer;
-    line-height: 0;
-  }
+  .sbtn { width: 54px; padding: 0; border: 0; background: none; cursor: pointer; line-height: 0; }
   .sbtn img { width: 100%; height: auto; display: none; }
   .sbtn[aria-pressed="true"] .up { display: block; }
   .sbtn[aria-pressed="true"]:active .up { display: none; }
   .sbtn[aria-pressed="true"]:active .down { display: block; }
   .sbtn[aria-pressed="false"] .off { display: block; }
-  .sbtn:focus-visible, .dbtn:focus-visible, #again:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; border-radius: 8px; }
+  button:focus-visible, select:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 
-  /* Three-column table: stats | machine | collection */
+  /* Three-column table: stats | machine | tabs */
   .table {
     width: 100%;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    align-items: center;
+    align-items: start;
     gap: 20px;
   }
-  .side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .side { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding-top: 60px; }
   .side.left { align-items: flex-end; }
-  .side.right { align-items: flex-start; }
+  .side.right { align-items: flex-start; padding-top: 20px; }
   .panel {
     width: 100%;
-    max-width: 330px;
+    max-width: 340px;
     background: var(--panel);
     border: 3px solid var(--gold-dark);
     box-shadow: inset 0 0 0 2px #000, 0 8px 20px rgba(0,0,0,0.5);
     border-radius: 10px;
     padding: 12px;
   }
+  .side.right .panel { max-width: 380px; }
   .panel h2 {
     margin: 0 0 10px;
     font-family: var(--pixel);
     font-weight: 400;
     font-size: 12px;
     color: var(--gold);
-    letter-spacing: 0.05em;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 8px;
-    flex-wrap: wrap;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap;
   }
-  .panel h2 span { font-family: var(--term); font-size: 18px; color: var(--muted); letter-spacing: 0; }
+  .panel h2 span { font-family: var(--term); font-size: 18px; color: var(--muted); }
+
+  /* Pixel buttons used in the panels */
+  .pbtn {
+    font-family: var(--pixel); font-size: 9px; line-height: 1.3;
+    color: #241a00; background: var(--gold);
+    border: 2px solid #000; box-shadow: inset 0 -3px 0 #b88900;
+    border-radius: 6px; padding: 7px 8px; cursor: pointer; white-space: nowrap;
+  }
+  .pbtn:active:not(:disabled) { box-shadow: inset 0 2px 0 #b88900; transform: translateY(1px); }
+  .pbtn:disabled { background: #5b5170; color: #2a2238; box-shadow: none; cursor: default; }
+  .pbtn.alt { background: #3a2f5e; color: var(--cream); box-shadow: inset 0 -3px 0 #1d1636; }
+  .pbtn.warn { background: var(--fail); color: #fff; box-shadow: inset 0 -3px 0 #8a0000; }
+  .pbtn.on { background: var(--led); box-shadow: inset 0 -3px 0 #2a9a33; }
 
   /* ---------- The slot machine ---------- */
   .machine {
     position: relative;
-    width: clamp(280px, calc((100vh - 150px) * 0.75), min(560px, 40vw));
+    width: clamp(280px, calc((100vh - 150px) * 0.75), min(560px, 38vw));
     aspect-ratio: 1086 / 1448;
     container-type: inline-size;
     cursor: pointer;
@@ -155,8 +157,8 @@
   }
   .machine > * { position: absolute; }
   .mbody { inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+  .machine.gold .mbody, .machine.gold #lever { filter: hue-rotate(38deg) saturate(1.35) brightness(1.08); }
 
-  /* Screen sits behind the cabinet and shows through the window */
   #screen {
     left: 19.2%; top: 29.3%; width: 61.2%; height: 24.6%;
     z-index: 1;
@@ -164,72 +166,55 @@
     background:
       repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 2px, transparent 2px 4px),
       radial-gradient(ellipse at 50% 45%, #2b2260 0%, #120c2e 75%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
+    display: flex; align-items: center; justify-content: center; text-align: center;
   }
-  #screen.rare { box-shadow: inset 0 0 6cqw rgba(255, 207, 51, 0.6); }
-  #screen > [hidden] { display: none !important; }
+  #screen.glow { box-shadow: inset 0 0 6cqw rgba(255, 207, 51, 0.6); }
 
-  /* A3 light-bulb sign on the idle screen */
   #sign { position: relative; width: 56cqw; display: grid; place-items: center; }
   .signtext { font-family: var(--pixel); color: var(--gold); font-size: 2.4cqw; line-height: 1.5; text-shadow: 0 0.3cqw 0 #5a0d00; animation: blink 1.1s steps(2) infinite; }
   .signtext small { display: block; font-size: 1.45cqw; color: var(--cream); }
-  /* A2 reels while drawing */
+  @keyframes blink { 50% { opacity: 0.4; } }
+
+  #drawing { display: flex; flex-direction: column; align-items: center; gap: 1.4cqw; }
   .reels { display: flex; gap: 1.2cqw; }
   .reel { width: 11cqw; }
-  /* A5 sad trombone in the corner after a FAIL */
-  #tromb { position: absolute; right: 1.2cqw; bottom: 0.8cqw; width: 14cqw; }
-  /* A10-A12 rare monkey reveal */
-  #rareBox { position: relative; width: 25cqw; height: 25cqw; }
-  #rareSpark, #rareMonkey { position: absolute; left: 50%; transform: translateX(-50%); }
-  #rareSpark { width: 32cqw; top: -1cqw; }
-  #rareMonkey { width: 25cqw; bottom: 0; }
-  @keyframes blink { 50% { opacity: 0.35; } }
-
-  #drawing { display: flex; flex-direction: column; align-items: center; gap: 1.6cqw; }
-  .ball {
-    width: 15cqw; aspect-ratio: 1; border-radius: 50%;
-    display: grid; place-items: center;
-    background: radial-gradient(circle at 35% 30%, #fff 0 8%, #ffe680 20%, var(--gold) 50%, #a87400 100%);
-    border: 0.5cqw solid #3a2400;
-    color: #2a1d00;
-    font-family: var(--pixel);
-    font-size: 2.2cqw;
-    overflow: hidden; word-break: break-all; padding: 1cqw; line-height: 1.1;
-    animation: shake 0.22s steps(2) infinite;
-  }
-  @keyframes shake {
-    0% { transform: translate(0, 0) rotate(0); }
-    25% { transform: translate(-0.5cqw, 0.3cqw) rotate(-8deg); }
-    50% { transform: translate(0.4cqw, -0.3cqw) rotate(6deg); }
-    75% { transform: translate(-0.3cqw, -0.4cqw) rotate(-4deg); }
-  }
-  .drawlabel { font-family: var(--pixel); font-size: 2.4cqw; color: var(--muted); }
+  .reel.stopped { animation: reelbump 0.18s steps(3); }
+  .reel.lost { filter: grayscale(0.85) brightness(0.6); }
+  @keyframes reelbump { 50% { transform: translateY(0.8cqw); } }
+  .drawlabel { font-family: var(--pixel); font-size: 2.2cqw; color: var(--muted); }
 
   #fail { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
-  #fail > * { grid-area: 1 / 1; }
-  #failAnim { width: 56cqw; }
-  #failImg { width: 46cqw; height: auto; }
-  #failImg[hidden] { display: none; }
+  #failImg { width: 46cqw; height: auto; animation: slam 0.32s steps(6) both; }
   @keyframes slam {
     0% { transform: scale(2); opacity: 0; }
     50% { transform: scale(0.9, 0.75); opacity: 1; }
     75% { transform: scale(0.97, 1.08); }
     100% { transform: scale(1); }
   }
+  #tromb { position: absolute; right: 1.2cqw; bottom: 0.8cqw; width: 14cqw; }
 
   #win { width: 100%; height: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2cqw; padding: 1.4cqw 2.4cqw; }
-  #winImg { height: 21cqw; width: auto; max-width: 100%; animation: pop 0.8s cubic-bezier(.2,1.6,.4,1) both, bob 1.4s ease-in-out 0.8s infinite; }
+  .photoBox { position: relative; display: grid; place-items: center; }
+  #winSpark { position: absolute; left: 50%; top: 50%; width: 34cqw; transform: translate(-50%, -50%); }
+  #winImg {
+    position: relative;
+    height: 23cqw; width: auto; max-width: 27cqw; object-fit: cover;
+    border: 0.7cqw solid var(--rc, var(--common));
+    border-radius: 1cqw;
+    box-shadow: 0 0 3cqw var(--rc, var(--common));
+    animation: pop 0.8s cubic-bezier(.2,1.6,.4,1) both, bob 1.6s ease-in-out 0.8s infinite;
+  }
+  #win.legendary #winImg { animation: pop 0.8s cubic-bezier(.2,1.6,.4,1) both, rainbowBorder 1.2s steps(6) infinite; }
+  @keyframes rainbowBorder { 0% { border-color: var(--pink); box-shadow: 0 0 3cqw var(--pink); } 33% { border-color: var(--gold); box-shadow: 0 0 3cqw var(--gold); } 66% { border-color: var(--cyan); box-shadow: 0 0 3cqw var(--cyan); } 100% { border-color: var(--pink); box-shadow: 0 0 3cqw var(--pink); } }
+  @keyframes rainbow { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
   @keyframes pop { 0% { transform: translateY(100%) scale(0.6); } 60% { transform: translateY(-8%) scale(1.06); } 100% { transform: none; } }
-  @keyframes bob { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-4deg); } 75% { transform: rotate(4deg); } }
+  @keyframes bob { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
   .wininfo { display: flex; flex-direction: column; align-items: center; gap: 1cqw; min-width: 0; }
   #winText { width: 100%; height: auto; animation: slam 0.35s steps(6) 0.2s both; }
+  #winBig { font-family: var(--pixel); font-size: 5.2cqw; color: var(--gold); text-shadow: 0 0.6cqw 0 #8a1a5a, 0 0 3cqw rgba(255, 79, 168, 0.9); animation: slam 0.35s steps(6) 0.2s both; }
   .badge { font-family: var(--pixel); font-size: 1.7cqw; padding: 0.6cqw 1.2cqw; border-radius: 0.6cqw; background: var(--rc, var(--common)); color: #120c2e; }
-  #winName { font-family: var(--pixel); font-size: 2.3cqw; color: var(--cream); line-height: 1.3; }
+  #winName { font-family: var(--pixel); font-size: 2.2cqw; color: var(--cream); line-height: 1.3; }
 
-  /* Marquee readout, LED money, buttons, lever, tray */
   .marquee {
     left: 22%; top: 13.6%; width: 56%; height: 7.4%;
     z-index: 3;
@@ -239,22 +224,18 @@
   }
   .marquee b { font-weight: 400; font-size: 3.6cqw; }
   .marquee span { font-size: 2cqw; color: var(--cream); }
+  .marquee span.lucky { color: var(--led); }
   #money {
     left: 64.8%; top: 58.7%; width: 19.4%; height: 3.8%;
     z-index: 3;
     display: flex; align-items: center; justify-content: center;
-    font-family: var(--term); font-size: 6.2cqw; line-height: 1;
+    font-family: var(--term); font-size: 6cqw; line-height: 1;
     color: var(--led); text-shadow: 0 0 1.4cqw rgba(93, 255, 106, 0.9);
     pointer-events: none; white-space: nowrap; overflow: hidden;
   }
   #money.bump { animation: bump 0.6s steps(4); }
   @keyframes bump { 0% { color: #fff; transform: scale(1.3); } 100% { transform: scale(1); } }
-  .dbtn {
-    z-index: 4;
-    width: 11.4%;
-    top: 61.6%;
-    padding: 0; border: 0; background: none; cursor: pointer; line-height: 0;
-  }
+  .dbtn { z-index: 4; width: 11.4%; top: 61.6%; padding: 0; border: 0; background: none; cursor: pointer; line-height: 0; }
   .dbtn img { width: 100%; height: auto; display: none; }
   .dbtn[aria-pressed="false"] .up, .dbtn[aria-pressed="true"] .on { display: block; }
   .dbtn:not(:disabled):hover .up { filter: brightness(1.15); }
@@ -269,24 +250,26 @@
     display: flex; align-items: center; justify-content: center;
     font-family: var(--pixel); font-size: 1.5cqw; color: #2a1a4a;
   }
-  /* A1 lever, aligned so its base sits on the cabinet's lever bracket */
-  #lever { left: 73.2%; top: 29.04%; width: 42.5%; z-index: 3; pointer-events: none; }
-  /* A6 siren over the cabinet's red dome (only while paying out) */
-  #siren { left: 31.5%; top: -4.49%; width: 31.8%; z-index: 3; pointer-events: none; }
-  /* A7 coins pouring into the tray */
+  #lever { left: 89.87%; top: 27.07%; width: 10.13%; height: auto; z-index: 3; transform-origin: 50% 100%; pointer-events: none; }
+  #lever.pull { animation: pull 0.7s steps(10) both; }
+  @keyframes pull {
+    0% { transform: scaleY(1); }
+    35%, 55% { transform: scaleY(-0.62); }
+    85% { transform: scaleY(1.06); }
+    100% { transform: scaleY(1); }
+  }
+  #siren { left: 30.6%; top: -4.9%; width: 33.8%; z-index: 3; pointer-events: none; }
   #coins { left: 25%; top: 85.4%; width: 15.5%; z-index: 3; pointer-events: none; }
-  /* A15 glow behind a pressed difficulty button */
-  #glow { top: 58.54%; width: 18.2%; z-index: 3; pointer-events: none; }
-  .paycoin { width: 6.5cqw; flex: none; }
+  #glow { top: 59.2%; width: 18.2%; z-index: 3; pointer-events: none; }
   #payout {
     left: 42%; top: 86%; width: 38%; height: 10%; gap: 1.2cqw;
     z-index: 3; pointer-events: none;
     display: flex; align-items: center; justify-content: center;
-    font-family: var(--pixel); font-size: 4.6cqw; color: var(--gold);
+    font-family: var(--pixel); font-size: 4.2cqw; color: var(--gold);
     text-shadow: 0 0.5cqw 0 #6b1200, 0 0 2cqw rgba(255, 207, 51, 0.8);
     opacity: 0;
   }
-  #payout.show { animation: payout 2.4s ease-out both; }
+  #payout.show { animation: payout 2.6s ease-out both; }
   @keyframes payout {
     0% { opacity: 0; transform: translateY(40%) scale(0.6); }
     15% { opacity: 1; transform: translateY(0) scale(1.15); }
@@ -294,37 +277,73 @@
     80% { opacity: 1; }
     100% { opacity: 0; transform: translateY(-60%); }
   }
+  .paycoin { width: 6.5cqw; flex: none; }
 
-  /* ---------- Stats (brass plaques) ---------- */
+  /* ---------- Stats (brass plaques) + Banana Meter ---------- */
   .plaques { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .plaque {
     aspect-ratio: 300 / 90;
     background: url("assets/plaque.webp") center / 100% 100% no-repeat;
     display: flex; justify-content: space-between; align-items: center; gap: 6px;
-    padding: 0 12%;
-    line-height: 1;
-    min-width: 0;
+    padding: 0 12%; line-height: 1; min-width: 0;
   }
   .plaque span { font-size: 17px; color: var(--muted); white-space: nowrap; }
   .plaque b { font-weight: 400; font-size: 24px; color: var(--cream); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+  .meter { margin-top: 10px; }
+  .mlabel { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--pixel); font-size: 9px; color: var(--gold); }
+  .mlabel b { font-weight: 400; font-family: var(--term); font-size: 20px; color: var(--cream); }
+  .mbar { margin-top: 4px; height: 18px; border: 2px solid #000; border-radius: 4px; background: #241b40; box-shadow: inset 0 0 0 2px #3a2f5e; overflow: hidden; }
+  .mbar i { display: block; height: 100%; width: 0%; background: repeating-linear-gradient(90deg, var(--gold) 0 10px, #ffe680 10px 14px); transition: width 0.3s steps(6); }
+  .mbar.full i { animation: blink 0.5s steps(2) infinite; }
+  .mhint { margin-top: 3px; font-size: 17px; line-height: 1; color: var(--muted); }
+  .mhint.lucky { color: var(--led); }
   .plate {
-    margin-top: 8px;
-    min-height: 44px;
+    margin-top: 8px; min-height: 44px;
     background: url("assets/plate.webp") center / 100% 100% no-repeat;
     display: flex; align-items: center; justify-content: center; text-align: center;
     padding: 6px 7%;
-    font-size: 18px; line-height: 1; white-space: nowrap; overflow: hidden;
-    color: var(--cream);
+    font-size: 18px; line-height: 1; color: var(--cream); white-space: nowrap; overflow: hidden;
   }
   .plate.lucky { color: var(--led); }
   .plate.unlucky { color: #ff8a7a; }
 
-  /* ---------- Collection (card frames) ---------- */
+  /* ---------- Tabs ---------- */
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-bottom: 10px; }
+  .tab {
+    font-family: var(--pixel); font-size: 8px; padding: 8px 2px; line-height: 1.2;
+    color: var(--muted); background: #241b40; border: 2px solid #000; border-radius: 6px; cursor: pointer;
+  }
+  .tab[aria-selected="true"] { color: #241a00; background: var(--gold); }
+  .tab .dot { display: inline-block; width: 6px; height: 6px; background: var(--led); margin-left: 3px; vertical-align: 1px; }
+  #tabBody { max-height: calc(100vh - 190px); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+  .note { font-size: 18px; line-height: 1.05; color: var(--muted); margin: 0 0 8px; }
+  .note b { color: var(--cream); font-weight: 400; }
+  .banner { font-size: 19px; line-height: 1.05; padding: 6px 8px; border-radius: 6px; margin-bottom: 8px; background: #3a1030; border: 2px solid var(--pink); color: var(--cream); }
+  .banner.crash { background: #10233a; border-color: var(--cyan); }
+  .rows { display: flex; flex-direction: column; gap: 6px; }
+  .row {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+    background: #1d1638; border: 2px solid #000; border-radius: 6px; padding: 5px 6px;
+  }
+  .row.wide { grid-template-columns: minmax(0, 1fr) auto; }
+  .thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 2px solid var(--rc, var(--common)); display: block; }
+  .thumb.unk { background: #2a2050; display: grid; place-items: center; font-family: var(--pixel); font-size: 12px; color: var(--muted); }
+  .rinfo { min-width: 0; line-height: 1; }
+  .rinfo b { display: block; font-weight: 400; font-size: 19px; color: var(--cream); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rinfo small { display: block; font-size: 16px; color: var(--muted); }
+  .rinfo .up { color: var(--led); } .rinfo .down { color: #ff8a7a; }
+  .ract { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+  .prog { height: 8px; background: #241b40; border: 1px solid #000; margin-top: 3px; }
+  .prog i { display: block; height: 100%; background: var(--led); }
+  select { font-family: var(--term); font-size: 18px; background: #241b40; color: var(--cream); border: 2px solid #000; border-radius: 4px; padding: 2px 4px; max-width: 100%; }
+
+  /* Album cards */
   .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; }
-  .card { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
   .frame { position: relative; width: 100%; line-height: 0; }
   .frame .art { position: absolute; object-fit: cover; }
   .frame .border { position: relative; width: 100%; height: auto; }
+  .card.legendary .frame .border { animation: rainbow 2s linear infinite; }
   .frame .nm {
     position: absolute; left: 12%; width: 76%;
     display: flex; align-items: center; justify-content: center;
@@ -332,62 +351,68 @@
   }
   .card .meta { font-size: 16px; line-height: 1; color: var(--muted); text-align: center; }
   .card .meta b { font-weight: 400; color: var(--rc); }
-  .card.found.rare .frame { animation: shine 1.4s ease-in-out infinite alternate; }
+  .card .perk { font-size: 15px; line-height: 1; color: var(--cream); text-align: center; min-height: 2em; }
+  .card.found.rare .frame, .card.found.legendary .frame { animation: shine 1.4s ease-in-out infinite alternate; }
   @keyframes shine { from { filter: drop-shadow(0 0 2px rgba(255,207,51,0.4)); } to { filter: drop-shadow(0 0 10px rgba(255,207,51,0.95)); } }
-  .count {
-    position: absolute; right: 14%; top: 13%;
-    background: rgba(0, 0, 0, 0.75); color: #fff;
-    font-family: var(--pixel); font-size: 7px; line-height: 1; padding: 3px 4px; border-radius: 3px;
-  }
+  .tags { position: absolute; right: 13%; top: 13%; display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+  .tags span { background: rgba(0, 0, 0, 0.75); color: #fff; font-family: var(--pixel); font-size: 6px; line-height: 1; padding: 3px 4px; border-radius: 3px; }
+  .tags .sh { color: var(--gold); }
+  .tags .zo { color: var(--led); }
+  .card .pbtn { font-size: 7px; padding: 5px 5px; }
 
-  /* ---------- Effects + game over ---------- */
-  #fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
-  #over {
-    position: fixed; inset: 0; z-index: 30;
-    background: rgba(8, 4, 20, 0.84);
-    display: grid; place-items: center; padding: 16px;
+  /* ---------- Toasts, collector offer, effects, broke screen ---------- */
+  #toasts { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 40; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; width: min(92vw, 460px); }
+  .toast { background: rgba(20, 12, 46, 0.95); border: 2px solid var(--gold); border-radius: 8px; padding: 7px 12px; font-size: 20px; line-height: 1.05; text-align: center; color: var(--cream); box-shadow: 0 6px 16px rgba(0,0,0,0.5); animation: toastIn 0.25s steps(4); }
+  @keyframes toastIn { from { transform: translateY(-20px); opacity: 0; } }
+  #offer {
+    position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    z-index: 35; width: min(94vw, 460px);
+    background: var(--plum); border: 3px solid var(--gold); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    padding: 10px 12px; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: center;
   }
-  #over[hidden] { display: none; }
+  #offer img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 2px solid var(--gold); }
+  #offer p { margin: 0 0 6px; font-size: 20px; line-height: 1.05; }
+  #offer p b { color: var(--gold); font-weight: 400; }
+  #offer .obtns { display: flex; gap: 8px; }
+  #offerBar { grid-column: 1 / -1; height: 6px; background: #241b40; }
+  #offerBar i { display: block; height: 100%; background: var(--gold); width: 100%; }
+  #fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+  #over { position: fixed; inset: 0; z-index: 30; background: rgba(8, 4, 20, 0.84); display: grid; place-items: center; padding: 16px; }
   .overcard {
     max-width: 440px; width: 100%;
-    background: var(--plum);
-    border: 4px solid var(--fail);
+    background: var(--plum); border: 4px solid var(--fail);
     box-shadow: inset 0 0 0 3px #000, 0 0 40px rgba(255, 36, 36, 0.4);
-    border-radius: 12px;
-    padding: 20px 18px;
-    text-align: center;
-    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    border-radius: 12px; padding: 18px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
   }
   .overcard img { width: 80%; height: auto; }
-  .overcard p { margin: 0; font-size: 22px; line-height: 1.15; color: var(--muted); }
+  .overcard p { margin: 0; font-size: 21px; line-height: 1.1; color: var(--muted); }
   .overcard p b { color: var(--cream); font-weight: 400; }
-  #again {
-    font-family: var(--pixel); font-size: 12px; line-height: 1.4;
-    color: #241a00; background: var(--gold);
-    border: 3px solid #000; box-shadow: inset 0 -4px 0 #b88900;
-    border-radius: 8px; padding: 12px 14px; cursor: pointer;
-  }
-  #again:active { box-shadow: inset 0 2px 0 #b88900; transform: translateY(2px); }
+  .overcard .obtns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .overcard .pbtn { font-size: 10px; padding: 10px 12px; }
 
   /* ---------- Narrow screens: machine first, panels underneath ---------- */
   @media (max-width: 1000px) {
     .table { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 14px; }
-    .side.left, .side.right { align-items: center; width: 100%; }
-    .machine { order: -1; width: min(100%, 480px); min-width: 0; }
-    .panel { max-width: 560px; }
+    .side, .side.left, .side.right { align-items: center; width: 100%; padding-top: 0; }
+    .machine { order: -1; width: min(100%, 480px); }
+    .panel, .side.right .panel { max-width: 560px; }
     .plaques { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .cards { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .tabs { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    #tabBody { max-height: none; }
     .title { width: min(78vw, 380px); }
     .audio { position: absolute; }
   }
   @media (max-width: 520px) {
     .plaques { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .sbtn { width: 44px; }
     .title { width: min(64vw, 300px); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ball, #winImg, #winText, .signtext, #money.bump, .card.found.rare .frame { animation: none !important; }
+    #winImg, #winText, #winBig, #failImg, .signtext, #lever.pull, #money.bump, .card .frame, .card .frame .border, .reel.stopped { animation: none !important; }
   }
 </style>
 </head>
@@ -395,7 +420,7 @@
 <div id="scene" aria-hidden="true">
   <div id="bgbox">
     <img class="bg" src="assets/bg.webp" alt="">
-    <div class="amb spr" data-sprite="neon" data-fps="4" style="left:12.5%;top:21%;width:7%"></div>
+    <div class="amb spr" data-sprite="neon" data-fps="4" style="left:12.5%;top:21%;width:4.6%"></div>
     <div class="amb spr" data-sprite="chandelier" data-fps="5" style="left:41.5%;top:1.2%;width:3.8%"></div>
     <div class="amb spr" data-sprite="chandelier" data-fps="5" style="left:63.9%;top:1.2%;width:3.8%"></div>
     <div class="amb spr" data-sprite="mini-slot" data-fps="6" style="left:38.2%;top:31.4%;width:3%"></div>
@@ -405,6 +430,7 @@
     <div class="amb spr" data-sprite="patron" data-fps="4" style="left:66.7%;top:34.6%;width:3.9%"></div>
   </div>
 </div>
+
 <div class="audio">
   <button class="sbtn" id="musicBtn" type="button" aria-pressed="true" aria-label="Music">
     <img class="up" src="assets/btn-music.webp" alt=""><img class="down" src="assets/btn-music-down.webp" alt=""><img class="off" src="assets/btn-music-off.webp" alt="">
@@ -420,31 +446,37 @@
   <div class="table">
     <aside class="side left">
       <section class="panel" aria-label="Stats">
-        <h2>STATS</h2>
+        <h2>STATS <span id="goldenLine"></span></h2>
         <div class="plaques">
           <div class="plaque"><span>TICKETS</span><b id="sTickets">0</b></div>
           <div class="plaque"><span>MONKEYS</span><b id="sWins">0</b></div>
           <div class="plaque"><span>STREAK</span><b id="sStreak">0</b></div>
           <div class="plaque"><span>LONGEST</span><b id="sLongest">0</b></div>
         </div>
+        <div class="meter">
+          <div class="mlabel"><span>BANANA METER</span><b id="meterNum">0/15</b></div>
+          <div class="mbar" id="meterBar"><i id="meterFill"></i></div>
+          <div class="mhint" id="meterHint">Fill it for a guaranteed monkey</div>
+        </div>
         <div class="plate" id="luck"></div>
+        <div class="plate" id="life"></div>
       </section>
     </aside>
 
-    <div class="machine" id="machine" role="button" tabindex="0" aria-label="Slot machine: tap or pull the lever to buy a $1 ticket">
+    <div class="machine" id="machine" role="button" tabindex="0" aria-label="Slot machine: tap or pull the lever to buy a ticket">
       <div id="screen" aria-live="polite">
-        <div id="prompt"><div id="sign" class="spr"><div class="signtext">PULL THE LEVER<small>OR TAP ANYWHERE · $1</small></div></div></div>
+        <div id="prompt"><div id="sign" class="spr"><div class="signtext">PULL THE LEVER<small id="signSmall">OR TAP ANYWHERE · $1</small></div></div></div>
         <div id="drawing" hidden>
           <div class="reels"><div class="reel spr"></div><div class="reel spr"></div><div class="reel spr"></div></div>
           <div class="drawlabel" id="ball">DRAWING…</div>
         </div>
-        <div id="fail" hidden><div id="failAnim" class="spr" role="img" aria-label="FAIL"></div><img id="failImg" src="assets/txt-fail.webp" alt="FAIL" hidden></div>
+        <div id="fail" hidden><img id="failImg" src="assets/txt-fail.webp" alt="FAIL"></div>
         <div id="tromb" class="spr" hidden></div>
         <div id="win" hidden>
-          <img id="winImg" alt="">
-          <div id="rareBox" hidden><div id="rareSpark" class="spr"></div><div id="rareMonkey" class="spr" role="img" aria-label="Selfie Grin"></div></div>
+          <div class="photoBox"><div id="winSpark" class="spr" hidden></div><img id="winImg" alt=""></div>
           <div class="wininfo">
             <img id="winText" alt="">
+            <div id="winBig" hidden>SIDNEY</div>
             <span class="badge" id="winBadge">COMMON</span>
             <div id="winName"></div>
           </div>
@@ -453,78 +485,135 @@
       <img class="mbody" src="assets/machine.webp" alt="" width="1086" height="1448">
       <div class="marquee"><b id="mqOdds">1 IN 20</b><span id="mqPrize">PRIZE $12</span></div>
       <div id="money">$20</div>
-      <div class="slot-hint">$1</div>
+      <div class="slot-hint" id="slotHint">$1</div>
+      <div id="glow" class="spr" hidden></div>
       <button class="dbtn" type="button" data-mode="easy" aria-label="Easy, 1 in 5"><img class="up" src="assets/btn-easy.webp" alt=""><img class="on" src="assets/btn-easy-on.webp" alt=""></button>
       <button class="dbtn" type="button" data-mode="normal" aria-label="Normal, 1 in 20"><img class="up" src="assets/btn-normal.webp" alt=""><img class="on" src="assets/btn-normal-on.webp" alt=""></button>
       <button class="dbtn" type="button" data-mode="hard" aria-label="Hard, 1 in 1,000"><img class="up" src="assets/btn-hard.webp" alt=""><img class="on" src="assets/btn-hard-on.webp" alt=""></button>
       <button class="dbtn" type="button" data-mode="real" aria-label="Real Lottery, 1 in 292,201,338"><img class="up" src="assets/btn-real.webp" alt=""><img class="on" src="assets/btn-real-on.webp" alt=""></button>
-      <div id="glow" class="spr" hidden></div>
-      <div id="lever" class="spr"></div>
+      <img id="lever" src="assets/lever.webp" alt="" width="110" height="324">
       <div id="siren" class="spr" hidden></div>
       <div id="coins" class="spr" hidden></div>
       <div id="payout"><div id="payCoin" class="paycoin spr"></div><span id="payText"></span></div>
     </div>
 
     <aside class="side right">
-      <section class="panel" aria-label="Monkey collection">
-        <h2>COLLECTION <span id="collCount">0 of 5 found</span></h2>
-        <div class="cards" id="cards"></div>
+      <section class="panel" aria-label="Collection and shop">
+        <div class="tabs" role="tablist" id="tabs">
+          <button class="tab" type="button" role="tab" data-tab="album">ALBUM</button>
+          <button class="tab" type="button" role="tab" data-tab="market">MARKET</button>
+          <button class="tab" type="button" role="tab" data-tab="zoo">ZOO</button>
+          <button class="tab" type="button" role="tab" data-tab="shop">SHOP</button>
+          <button class="tab" type="button" role="tab" data-tab="quests">QUESTS</button>
+          <button class="tab" type="button" role="tab" data-tab="retire">RETIRE</button>
+        </div>
+        <div id="tabBody"></div>
       </section>
     </aside>
   </div>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+
+<div id="offer" hidden>
+  <img id="offerImg" alt="">
+  <div>
+    <p id="offerText"></p>
+    <div class="obtns"><button class="pbtn" type="button" id="offerYes">SELL</button><button class="pbtn alt" type="button" id="offerNo">NO THANKS</button></div>
+  </div>
+  <div id="offerBar"><i id="offerFill"></i></div>
 </div>
 
 <canvas id="fx"></canvas>
 
 <div id="over" hidden>
   <div class="overcard" role="dialog" aria-modal="true" aria-label="Out of money">
-    <div id="wallet" class="spr" style="width:120px"></div>
+    <div id="wallet" class="spr" style="width:110px"></div>
     <img src="assets/txt-broke.webp" alt="BROKE!">
     <p id="overText"></p>
-    <p>Real lotteries work the same way: they pay out less than they take in, so the longer you play, the more you lose.</p>
-    <button id="again" type="button">PLAY AGAIN · $20</button>
+    <p>Real lotteries pay out less than they take in. Here you can sell monkeys, wait for zoo income, or grab free coins.</p>
+    <div class="obtns">
+      <button class="pbtn" type="button" id="freeBtn">FREE $10</button>
+      <button class="pbtn alt" type="button" id="sellBtn">SELL MONKEYS</button>
+      <button class="pbtn alt" type="button" id="closeOver">CLOSE</button>
+    </div>
   </div>
 </div>
 
 <script>
 (() => {
-  // ---------- Game data ----------
-  const START_MONEY = 20;
-  const TICKET = 1;
+  // ================= Game data =================
   const MODES = {
-    easy:   { label: 'Easy',         odds: 5,         prize: 3 },
-    normal: { label: 'Normal',       odds: 20,        prize: 12 },
-    hard:   { label: 'Hard',         odds: 1000,      prize: 500 },
-    real:   { label: 'Real Lottery', odds: 292201338, prize: 100000000 },
+    easy:   { label: 'Easy',         odds: 5,         prize: 3,         meter: 5 },
+    normal: { label: 'Normal',       odds: 20,        prize: 12,        meter: 15 },
+    hard:   { label: 'Hard',         odds: 1000,      prize: 500,       meter: 40 },
+    real:   { label: 'Real Lottery', odds: 292201338, prize: 100000000, meter: 0 },
   };
-  const RARITY = {
-    common:   { label: 'Common',   mult: 1, color: 'var(--common)',   frame: 'assets/card-common.webp',   win: [12.6, 11.4, 74.8, 57.9],  name: [75.5, 11] },
-    uncommon: { label: 'Uncommon', mult: 2, color: 'var(--uncommon)', frame: 'assets/card-uncommon.webp', win: [12.65, 11.5, 74.5, 57.8], name: [75.5, 11] },
-    rare:     { label: 'Rare',     mult: 5, color: 'var(--rare)',     frame: 'assets/card-rare.webp',     win: [12.7, 15.65, 73.6, 54.7], name: [77, 10.5] },
+  const RAR = {
+    common:    { label: 'Common',    rank: 0, mult: 1,  price: 8,    zoo: 0.2, color: 'var(--common)',   frame: 'assets/card-common.webp',   win: [12.6, 11.4, 74.8, 57.9],  name: [75.5, 11] },
+    uncommon:  { label: 'Uncommon',  rank: 1, mult: 2,  price: 25,   zoo: 0.5, color: 'var(--uncommon)', frame: 'assets/card-uncommon.webp', win: [12.65, 11.5, 74.5, 57.8], name: [75.5, 11] },
+    rare:      { label: 'Rare',      rank: 2, mult: 5,  price: 150,  zoo: 1.5, color: 'var(--rare)',     frame: 'assets/card-rare.webp',     win: [12.7, 15.65, 73.6, 54.7], name: [77, 10.5] },
+    legendary: { label: 'Legendary', rank: 3, mult: 20, price: 1000, zoo: 4,   color: 'var(--legend)',   frame: null,                        win: [12.7, 15.65, 73.6, 54.7], name: [77, 10.5] },
   };
+  RAR.legendary.frame = RAR.rare.frame;
   const LOCKED_FRAME = 'assets/card-locked.webp';
   const TXT = { jackpot: 'assets/txt-jackpot.webp', rare: 'assets/txt-rare.webp' };
-  // When you win, which monkey you get is picked by weight (weights add up to 100).
+  // Which monkey you get on a win is picked by weight (weights add up to 100). Unfound ones count 3x.
   const MONKEYS = [
-    { id: 'finger',   name: 'Finger Hugger',   rarity: 'common',   weight: 34, src: 'assets/monkey-finger.webp' },
-    { id: 'pocket',   name: 'Pocket Marmoset', rarity: 'common',   weight: 34, src: 'assets/monkey-pocket.webp' },
-    { id: 'bignose',  name: 'Big Nose',        rarity: 'uncommon', weight: 14, src: 'assets/monkey-bignose.webp' },
-    { id: 'wildhair', name: 'Wild Hair',       rarity: 'uncommon', weight: 13, src: 'assets/monkey-wildhair.webp' },
-    { id: 'selfie',   name: 'Selfie Grin',     rarity: 'rare',     weight: 5,  src: 'assets/monkey-selfie.webp' },
+    { id: 'finger',   name: 'Finger Hugger',   rarity: 'common',    weight: 22, perk: 'banana', src: 'assets/photos/finger.jpg',   pos: '50% 40%' },
+    { id: 'pocket',   name: 'Pocket Marmoset', rarity: 'common',    weight: 22, perk: 'cheap',  src: 'assets/photos/pocket.jpg',   pos: '45% 40%' },
+    { id: 'lips',     name: 'Red Lips',        rarity: 'common',    weight: 20, perk: 'prize',  src: 'assets/photos/lips.jpg',     pos: '50% 55%' },
+    { id: 'bignose',  name: 'Big Nose',        rarity: 'uncommon',  weight: 10, perk: 'odds',   src: 'assets/photos/bignose.jpg',  pos: '35% 50%' },
+    { id: 'wildhair', name: 'Wild Hair',       rarity: 'uncommon',  weight: 10, perk: 'refund', src: 'assets/photos/wildhair.jpg', pos: '50% 40%' },
+    { id: 'party',    name: 'Party Chimp',     rarity: 'uncommon',  weight: 8,  perk: 'party',  src: 'assets/photos/party.jpg',    pos: '50% 40%' },
+    { id: 'selfie',   name: 'Selfie Grin',     rarity: 'rare',      weight: 4,  perk: 'double', src: 'assets/photos/selfie.jpg',   pos: '50% 45%' },
+    { id: 'cool',     name: 'Too Cool',        rarity: 'rare',      weight: 3,  perk: 'market', src: 'assets/photos/cool.jpg',     pos: '50% 25%' },
+    { id: 'sidney',   name: 'Sidney',          rarity: 'legendary', weight: 1,  perk: 'meter',  src: 'assets/photos/sidney.jpg',   pos: '50% 45%' },
   ];
+  const BY_ID = Object.fromEntries(MONKEYS.map(m => [m.id, m]));
   const TOTAL_WEIGHT = MONKEYS.reduce((s, m) => s + m.weight, 0);
+  // Perks work while you own at least one copy. Values are for level 1 / 2 / 3.
+  const PERKS = {
+    banana: { vals: [1, 2, 3],          text: v => `+${v} extra banana per FAIL` },
+    cheap:  { vals: [0.1, 0.15, 0.2],   text: v => `Tickets ${Math.round(v * 100)}% cheaper` },
+    prize:  { vals: [0.1, 0.15, 0.2],   text: v => `+${Math.round(v * 100)}% prizes` },
+    odds:   { vals: [0.1, 0.15, 0.2],   text: v => `+${Math.round(v * 100)}% odds` },
+    refund: { vals: [0.1, 0.15, 0.2],   text: v => `${Math.round(v * 100)}% of FAILs refunded` },
+    party:  { vals: [0.125, 0.19, 0.25], text: v => `${Math.round(v * 100)}% of wins pay double` },
+    double: { vals: [2, 2.5, 3],        text: v => `All prizes ×${v}` },
+    market: { vals: [0.2, 0.3, 0.4],    text: v => `+${Math.round(v * 100)}% sell prices` },
+    meter:  { vals: [2, 2.5, 3],        text: v => `Banana Meter fills ×${v}` },
+  };
+  const UPGRADES = [
+    { key: 'bulbs',  name: 'Better Bulbs',  desc: '+5% odds per level',                    costs: [25, 75, 200] },
+    { key: 'tray',   name: 'Bigger Tray',   desc: '+20% prizes per level',                 costs: [30, 90, 250] },
+    { key: 'charm',  name: 'Lucky Charm',   desc: 'Banana Meter fills 20% faster per level', costs: [40, 120] },
+    { key: 'zoo',    name: 'Zoo Expansion', desc: '+1 zoo enclosure per level',            costs: [80, 200] },
+    { key: 'auto',   name: 'Auto-Lever',    desc: 'Pulls the lever every 2.5 seconds',     costs: [150], toggle: 'autoOn' },
+    { key: 'triple', name: 'Triple Ticket', desc: 'Each pull buys 3 tickets at once',      costs: [300], toggle: 'tripleOn' },
+  ];
+  const QUESTS = {
+    pull30:  { text: 'Pull the lever 30 times',    goal: 30, reward: 15 },
+    lose10:  { text: 'Lose 10 in a row',           goal: 10, reward: 10 },
+    sell30:  { text: 'Sell a monkey for over $30', goal: 1,  reward: 20 },
+    winHard: { text: 'Win a monkey on Hard',       goal: 1,  reward: 50 },
+    win3:    { text: 'Win 3 monkeys',              goal: 3,  reward: 20 },
+    zoo2:    { text: 'Have 2 monkeys in the zoo',  goal: 2,  reward: 15 },
+    shiny:   { text: 'Find a shiny monkey',        goal: 1,  reward: 40 },
+    level:   { text: 'Level up a monkey',          goal: 1,  reward: 25 },
+  };
+  const FREE_COOLDOWN = 3 * 60 * 1000;
+  const SHINY_ODDS = 25;
 
-  // ---------- Sprite sheets (animation set A1-A15) ----------
-  // [frames, frame width, frame height] for each sheet; every sheet is one row of frames.
-  const FR = {"lever": [8, 140, 147], "reel-spin": [4, 82, 88], "reel-stop": [6, 88, 90], "lights": [4, 171, 84], "fail": [6, 140, 109], "trombone": [4, 175, 81], "siren": [4, 147, 94], "coins": [8, 107, 101], "coin": [6, 90, 89], "banana": [6, 65, 61], "confetti-gold": [4, 40, 38], "confetti-color": [9, 37, 36], "rare-reveal": [8, 133, 109], "rare-idle": [4, 88, 83], "sparkle": [6, 101, 84], "wallet": [8, 99, 156], "neon": [3, 118, 44], "mini-slot": [4, 50, 56], "patron": [4, 65, 53], "chandelier": [4, 62, 50], "glow": [2, 140, 138]};
+  // ================= Sprite sheets =================
+  const FR = {"reel-spin": [4, 86, 88], "reel-stop": [4, 86, 88], "lights": [4, 172, 82], "trombone": [4, 173, 79], "siren": [4, 158, 97], "coins": [8, 105, 99], "coin": [6, 88, 86], "banana": [6, 63, 57], "confetti-gold": [4, 38, 35], "confetti-color": [9, 35, 33], "sparkle": [6, 94, 88], "wallet": [8, 97, 157], "neon": [3, 73, 48], "mini-slot": [4, 48, 56], "patron": [4, 65, 57], "chandelier": [4, 62, 54], "glow": [2, 139, 127]};
   const SHEET = {
-    'lever': 'assets/anim/lever.webp', 'reel-spin': 'assets/anim/reel-spin.webp', 'reel-stop': 'assets/anim/reel-stop.webp',
-    'lights': 'assets/anim/lights.webp', 'fail': 'assets/anim/fail.webp', 'trombone': 'assets/anim/trombone.webp',
-    'siren': 'assets/anim/siren.webp', 'coins': 'assets/anim/coins.webp', 'coin': 'assets/anim/coin.webp',
-    'banana': 'assets/anim/banana.webp', 'confetti-gold': 'assets/anim/confetti-gold.webp', 'confetti-color': 'assets/anim/confetti-color.webp',
-    'rare-reveal': 'assets/anim/rare-reveal.webp', 'rare-idle': 'assets/anim/rare-idle.webp', 'sparkle': 'assets/anim/sparkle.webp',
-    'wallet': 'assets/anim/wallet.webp', 'neon': 'assets/anim/neon.webp', 'mini-slot': 'assets/anim/mini-slot.webp',
-    'patron': 'assets/anim/patron.webp', 'chandelier': 'assets/anim/chandelier.webp', 'glow': 'assets/anim/glow.webp',
+    'reel-spin': 'assets/anim/reel-spin.webp', 'reel-stop': 'assets/anim/reel-stop.webp', 'lights': 'assets/anim/lights.webp',
+    'trombone': 'assets/anim/trombone.webp', 'siren': 'assets/anim/siren.webp', 'coins': 'assets/anim/coins.webp',
+    'coin': 'assets/anim/coin.webp', 'banana': 'assets/anim/banana.webp', 'confetti-gold': 'assets/anim/confetti-gold.webp',
+    'confetti-color': 'assets/anim/confetti-color.webp', 'sparkle': 'assets/anim/sparkle.webp', 'wallet': 'assets/anim/wallet.webp',
+    'neon': 'assets/anim/neon.webp', 'mini-slot': 'assets/anim/mini-slot.webp', 'patron': 'assets/anim/patron.webp',
+    'chandelier': 'assets/anim/chandelier.webp', 'glow': 'assets/anim/glow.webp',
   };
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function setSprite(el, name, frame = 0) {
@@ -539,15 +628,9 @@
   }
   const players = new Map();
   let rafOn = false;
-  // Play a sheet on an element. One-shots hold their last frame and then call onEnd.
   function play(el, name, { fps = 10, loop = false, onEnd = null, offset = 0 } = {}) {
     const n = FR[name][0];
-    if (reduceMotion) {
-      setSprite(el, name, loop ? 0 : n - 1);
-      players.delete(el);
-      if (onEnd) setTimeout(onEnd, 0);
-      return;
-    }
+    if (reduceMotion) { setSprite(el, name, loop ? 0 : n - 1); players.delete(el); if (onEnd) setTimeout(onEnd, 0); return; }
     setSprite(el, name, 0);
     players.set(el, { name, fps, loop, onEnd, t0: performance.now() - offset });
     if (!rafOn) { rafOn = true; requestAnimationFrame(tickSprites); }
@@ -566,126 +649,467 @@
     if (players.size) requestAnimationFrame(tickSprites); else rafOn = false;
   }
 
-  // ---------- Random numbers ----------
-  // Unbiased random integer in [0, n) from the browser's crypto RNG (rejection sampling).
+  // ================= Random numbers =================
   const buf = new Uint32Array(1);
-  function randInt(n) {
+  function randInt(n) {   // unbiased integer in [0, n) from the crypto RNG
     const limit = Math.floor(2 ** 32 / n) * n;
     let x;
     do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
     return x % n;
   }
-  function pickMonkey() {
-    let r = randInt(TOTAL_WEIGHT);
-    for (const m of MONKEYS) { if (r < m.weight) return m; r -= m.weight; }
-    return MONKEYS[0];
-  }
+  const randFloat = () => randInt(1e9) / 1e9;
 
-  // ---------- Saved settings (per browser, optional) ----------
+  // ================= Save data =================
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
   };
-
-  // ---------- State ----------
-  let mode = store.get('lotto.mode', 'normal');
-  if (!MODES[mode]) mode = 'normal';
+  const SAVE_KEY = 'lotto.save.v2';
+  const newRun = () => ({ tickets: 0, wins: 0, streak: 0, longest: 0, sinceWin: 0, lastWinTook: null });
+  const newUpgrades = () => ({ bulbs: 0, tray: 0, charm: 0, zoo: 0, auto: 0, autoOn: false, triple: 0, tripleOn: false, skinOn: false });
+  function defaults() {
+    return {
+      money: 20, mode: 'normal',
+      col: {}, seen: {}, zoo: [], zooLast: Date.now(),
+      up: newUpgrades(), golden: 0, albumBonus: false,
+      meter: 0, failStreak: 0, lucky: 0,
+      market: Object.fromEntries(MONKEYS.map(m => [m.id, 1])), mprev: {}, event: null,
+      sinceOffer: 0, freeAt: 0,
+      quests: null,
+      life: { spent: 0, won: 0, tickets: 0, wins: 0, sold: 0 },
+      run: newRun(),
+    };
+  }
+  function load() {
+    const s = Object.assign(defaults(), store.get(SAVE_KEY, {}));
+    s.up = Object.assign(newUpgrades(), s.up);
+    for (const m of MONKEYS) if (s.market[m.id] == null) s.market[m.id] = 1;
+    // bring over the collection from the earlier version of the game
+    const old = store.get('lotto.collection', null);
+    if (old && !store.get(SAVE_KEY, null)) {
+      for (const [id, n] of Object.entries(old)) if (BY_ID[id] && n > 0) { s.col[id] = { n, shiny: 0, lvl: 1 }; s.seen[id] = true; }
+      const mode = store.get('lotto.mode', 'normal'); if (MODES[mode]) s.mode = mode;
+    }
+    return s;
+  }
+  let S = load();
   let musicOn = store.get('lotto.music', true);
   let sfxOn = store.get('lotto.sfx', true);
-  const collection = store.get('lotto.collection', {});
-  let money, tickets, wins, streak, longest, sinceWin, lastWinTook;
-  let busy = false;
-  function resetRun() {
-    money = START_MONEY; tickets = 0; wins = 0; streak = 0; longest = 0; sinceWin = 0; lastWinTook = null;
-  }
-  resetRun();
+  const save = () => store.set(SAVE_KEY, S);
 
-  // ---------- DOM ----------
+  // ================= Helpers =================
   const $ = (id) => document.getElementById(id);
   const fmt = (n) => Math.round(n).toLocaleString('en-US');
-  const money$ = (n) => '$' + fmt(n);
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const money$ = (n) => { n = round2(n); return '$' + (Number.isInteger(n) ? fmt(n) : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })); };
   const shortMoney = (n) => n >= 1e6 ? '$' + +(n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + 'M' : money$(n);
-  const dbtns = [...document.querySelectorAll('.dbtn')];
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const col = (id) => (S.col[id] ||= { n: 0, shiny: 0, lvl: 1 });
+  const owned = (id) => (S.col[id]?.n || 0) + (S.col[id]?.shiny || 0);
+  const lvl = (id) => S.col[id]?.lvl || 1;
+  const albumDone = () => MONKEYS.every(m => S.seen[m.id]);
+  const zooSlots = () => 2 + S.up.zoo;
 
-  function show(which) {
-    for (const id of ['prompt', 'drawing', 'fail', 'win']) $(id).hidden = id !== which;
+  function perk(kind, anyMode = false) {
+    if (!anyMode && S.mode === 'real') return 0;   // Real Lottery mode ignores perks
+    const m = MONKEYS.find(x => x.perk === kind);
+    if (!m || !owned(m.id)) return 0;
+    return PERKS[kind].vals[lvl(m.id) - 1];
+  }
+  const ticketPrice = () => S.mode === 'real' ? 1 : round2(1 - perk('cheap'));
+  function winChance() {
+    const m = MODES[S.mode];
+    if (S.mode === 'real') return 1 / m.odds;
+    let mult = 1 + 0.05 * S.up.bulbs + perk('odds') + 0.02 * S.golden;
+    if (S.lucky > 0) mult *= 2;
+    return Math.min(0.9, mult / m.odds);
+  }
+  function prizeFor(m) {
+    const base = MODES[S.mode].prize * RAR[m.rarity].mult;
+    if (S.mode === 'real') return base;
+    const bonus = 1 + perk('prize') + 0.2 * S.up.tray + 0.02 * S.golden + (S.albumBonus ? 0.1 : 0);
+    return base * bonus * (perk('double') || 1);
+  }
+  const meterSize = () => MODES[S.mode].meter;
+  const meterGain = () => (1 + perk('banana')) * (perk('meter') || 1) * (1 + 0.2 * S.up.charm);
+  function marketPrice(id, shiny = false) {
+    const m = BY_ID[id];
+    let p = RAR[m.rarity].price * S.market[id] * (1 + perk('market', true)) * (shiny ? 10 : 1);
+    if (S.event && S.event.id === id) p *= S.event.kind === 'craze' ? 3 : 0.5;
+    return Math.max(1, round2(p));
+  }
+  const zooRate = (id) => RAR[BY_ID[id].rarity].zoo * (1 + 0.5 * (lvl(id) - 1)) * ((S.col[id]?.shiny || 0) > 0 ? 3 : 1);
+
+  function pickMonkey() {
+    const weights = MONKEYS.map(m => m.weight * (S.seen[m.id] ? 1 : 3));
+    let r = randInt(weights.reduce((a, b) => a + b, 0));
+    for (let i = 0; i < MONKEYS.length; i++) { if (r < weights[i]) return MONKEYS[i]; r -= weights[i]; }
+    return MONKEYS[0];
   }
 
-  function renderOdds() {
-    const m = MODES[mode];
-    $('mqOdds').textContent = `1 IN ${fmt(m.odds)}`;
-    $('mqOdds').style.fontSize = m.odds > 1e6 ? '2.4cqw' : '';
-    $('mqPrize').textContent = `PRIZE ${shortMoney(m.prize)}+`;
-    for (const b of dbtns) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+  // ================= Toasts =================
+  function toast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast'; t.textContent = msg;
+    $('toasts').appendChild(t);
+    while ($('toasts').children.length > 3) $('toasts').firstChild.remove();
+    setTimeout(() => t.remove(), 3600);
+  }
+
+  // ================= Quests =================
+  function todayKey() { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
+  function ensureQuests() {
+    const day = todayKey();
+    if (S.quests && S.quests.day === day) return;
+    let h = 7; for (const c of day) h = (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0;
+    // shuffle the quest list with a day-seeded generator and take the first three
+    const keys = Object.keys(QUESTS);
+    for (let i = keys.length - 1; i > 0; i--) {
+      h = (Math.imul(h, 1103515245) + 12345) >>> 0;
+      const j = (h >>> 16) % (i + 1); [keys[i], keys[j]] = [keys[j], keys[i]];
+    }
+    const pick = keys.slice(0, 3);
+    S.quests = { day, list: pick.map(id => ({ id, prog: 0, claimed: false })) };
+  }
+  function quest(id, amount = 1, absolute = false) {
+    ensureQuests();
+    const q = S.quests.list.find(x => x.id === id);
+    if (!q || q.claimed) return;
+    const before = q.prog;
+    q.prog = Math.min(QUESTS[id].goal, absolute ? Math.max(q.prog, amount) : q.prog + amount);
+    if (before < QUESTS[id].goal && q.prog >= QUESTS[id].goal) toast(`Quest done: ${QUESTS[id].text}! Claim it in QUESTS.`);
+  }
+
+  // ================= Market =================
+  function driftMarket() {
+    for (const m of MONKEYS) {
+      S.mprev[m.id] = S.market[m.id];
+      let v = S.market[m.id] * (1 + (randFloat() - 0.5) * 0.14);
+      v += (1 - v) * 0.03;                       // drift back toward normal prices
+      S.market[m.id] = Math.min(3, Math.max(0.4, round2(v * 100) / 100));
+    }
+    if (S.event) { if (--S.event.left <= 0) S.event = null; }
+    else if (randInt(30) === 0) {
+      const m = MONKEYS[randInt(MONKEYS.length)];
+      S.event = { id: m.id, kind: randInt(2) ? 'craze' : 'crash', left: 20 };
+      toast(S.event.kind === 'craze' ? `${m.name} craze! Prices ×3 for 20 tickets` : `${m.name} crash! Prices −50% for 20 tickets`);
+    }
+  }
+  const canSell = (id, shiny) => {
+    const c = S.col[id]; if (!c) return false;
+    if ((shiny ? c.shiny : c.n) < 1) return false;
+    return !(owned(id) === 1 && S.zoo.includes(id));
+  };
+  function sellOne(id, shiny, amount) {
+    if (!canSell(id, shiny)) return;
+    const c = col(id);
+    if (shiny) c.shiny--; else c.n--;
+    if (!owned(id)) c.lvl = 1;
+    S.money = round2(S.money + amount);
+    S.life.sold++;
+    if (amount > 30) quest('sell30');
+    sfxCash();
+    toast(`Sold ${shiny ? 'shiny ' : ''}${BY_ID[id].name} for ${money$(amount)}`);
+  }
+
+  // ================= Collector offers =================
+  let offer = null, offerTimer = null;
+  function maybeOffer() {
+    if (offer || S.sinceOffer < 12 || randFloat() > 0.3) return;
+    const choices = MONKEYS.filter(m => canSell(m.id, false));
+    if (!choices.length) return;
+    S.sinceOffer = 0;
+    const m = choices[randInt(choices.length)];
+    offer = { id: m.id, amount: round2(marketPrice(m.id) * (0.6 + randFloat() * 1.4)), until: Date.now() + 20000 };
+    $('offerImg').src = m.src;
+    $('offerText').innerHTML = `A collector offers <b>${money$(offer.amount)}</b> for your <b>${esc(m.name)}</b>` +
+      ` (market price ${money$(marketPrice(m.id))})${owned(m.id) === 1 ? '. It\'s your last one!' : '.'}`;
+    $('offer').hidden = false;
+    clearInterval(offerTimer);
+    offerTimer = setInterval(() => {
+      const left = offer ? offer.until - Date.now() : 0;
+      $('offerFill').style.width = Math.max(0, left / 200) + '%';
+      if (left <= 0) closeOffer();
+    }, 100);
+  }
+  function closeOffer() { offer = null; clearInterval(offerTimer); $('offer').hidden = true; }
+  $('offerYes').addEventListener('click', () => { if (offer) { sellOne(offer.id, false, offer.amount); closeOffer(); renderAll(); save(); } });
+  $('offerNo').addEventListener('click', closeOffer);
+
+  // ================= Zoo income =================
+  function collectZoo(silent) {
+    const now = Date.now();
+    const mins = Math.min(8 * 60, (now - (S.zooLast || now)) / 60000);
+    S.zooLast = now;
+    const rate = S.zoo.reduce((s, id) => s + zooRate(id), 0);
+    const earned = round2(rate * mins);
+    if (earned > 0) {
+      S.money = round2(S.money + earned);
+      if (!silent) toast(`Your zoo monkeys earned ${money$(earned)} while you were away!`);
+    }
+    return earned;
+  }
+
+  // ================= Rendering =================
+  const dbtns = [...document.querySelectorAll('.dbtn')];
+  function show(which) { for (const id of ['prompt', 'drawing', 'fail', 'win']) $(id).hidden = id !== which; }
+
+  function renderMachine() {
+    const p = winChance();
+    $('mqOdds').textContent = `1 IN ${fmt(1 / p)}`;
+    $('mqOdds').style.fontSize = 1 / p > 1e6 ? '2.4cqw' : '';
+    const mq = $('mqPrize');
+    if (S.lucky > 0 && S.mode !== 'real') { mq.textContent = `LUCKY ×2 · ${S.lucky} LEFT`; mq.className = 'lucky'; }
+    else { mq.textContent = `PRIZE ${shortMoney(prizeFor(MONKEYS[0]))}+`; mq.className = ''; }
+    for (const b of dbtns) b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode));
+    const price = ticketPrice();
+    const count = S.up.triple && S.up.tripleOn ? 3 : 1;
+    $('slotHint').textContent = (count > 1 ? '3×' : '') + money$(price);
+    $('signSmall').textContent = `OR TAP ANYWHERE · ${count > 1 ? '3× ' : ''}${money$(price)}`;
+    $('money').textContent = shortMoney(S.money);
+    $('machine').classList.toggle('gold', !!S.up.skinOn);
   }
 
   function renderStats() {
-    $('money').textContent = shortMoney(money);
-    $('sTickets').textContent = fmt(tickets);
-    $('sWins').textContent = fmt(wins);
-    $('sStreak').textContent = fmt(streak);
-    $('sLongest').textContent = fmt(longest);
-    const n = MODES[mode].odds;
+    const r = S.run;
+    $('sTickets').textContent = fmt(r.tickets);
+    $('sWins').textContent = fmt(r.wins);
+    $('sStreak').textContent = fmt(r.streak);
+    $('sLongest').textContent = fmt(r.longest);
+    $('goldenLine').textContent = S.golden ? `🍌 ×${S.golden} golden` : '';
+    const size = meterSize();
+    const bar = $('meterBar'), hint = $('meterHint');
+    hint.className = 'mhint';
+    if (!size) {
+      $('meterNum').textContent = 'OFF'; $('meterFill').style.width = '0%'; bar.classList.remove('full');
+      hint.textContent = 'No help in Real Lottery mode';
+    } else {
+      const v = Math.min(size, S.meter);
+      $('meterNum').textContent = `${Math.floor(v)}/${size}`;
+      $('meterFill').style.width = (v / size * 100) + '%';
+      bar.classList.toggle('full', v >= size);
+      hint.textContent = v >= size ? 'FULL! Next ticket is a guaranteed monkey' : 'Each FAIL adds bananas. Full = guaranteed monkey';
+      if (S.lucky > 0) { hint.className = 'mhint lucky'; hint.textContent = `The machine feels warm: odds ×2 for ${S.lucky} more`; }
+    }
+    const n = Math.round(1 / winChance());
     const luck = $('luck');
     luck.className = 'plate';
-    if (lastWinTook == null) {
-      luck.textContent = `Average: 1 monkey per ${fmt(n)} tickets`;
-    } else if (lastWinTook < n) {
-      luck.classList.add('lucky');
-      luck.textContent = `Last win took ${fmt(lastWinTook)}. Lucky! (avg ${fmt(n)})`;
-    } else if (lastWinTook > n) {
-      luck.classList.add('unlucky');
-      luck.textContent = `Last win took ${fmt(lastWinTook)}. Unlucky! (avg ${fmt(n)})`;
-    } else {
-      luck.textContent = `Last win took ${fmt(lastWinTook)}, right on average`;
-    }
+    if (r.lastWinTook == null) luck.textContent = `Average: 1 monkey per ${fmt(n)} tickets`;
+    else if (r.lastWinTook < n) { luck.classList.add('lucky'); luck.textContent = `Last win took ${fmt(r.lastWinTook)}. Lucky! (avg ${fmt(n)})`; }
+    else if (r.lastWinTook > n) { luck.classList.add('unlucky'); luck.textContent = `Last win took ${fmt(r.lastWinTook)}. Unlucky! (avg ${fmt(n)})`; }
+    else luck.textContent = `Last win took ${fmt(r.lastWinTook)}, right on average`;
+    $('life').textContent = `Lifetime: spent ${money$(S.life.spent)} · won ${money$(S.life.won)}`;
   }
 
-  function renderCollection() {
-    const n = MODES[mode].odds;
-    const cards = $('cards');
-    cards.innerHTML = '';
-    let found = 0;
-    for (const m of MONKEYS) {
-      const count = collection[m.id] || 0;
-      const r = RARITY[m.rarity];
-      if (count) found++;
-      const card = document.createElement('div');
-      card.className = `card ${m.rarity}` + (count ? ' found' : '');
-      card.style.setProperty('--rc', r.color);
-      const [wl, wt, ww, wh] = r.win;
-      card.innerHTML = count
-        ? `<div class="frame">
-             <img class="art" src="${m.src}" alt="${m.name}" style="left:${wl}%;top:${wt}%;width:${ww}%;height:${wh}%">
-             <img class="border" src="${r.frame}" alt="">
-             <div class="nm" style="top:${r.name[0]}%;height:${r.name[1]}%">${m.name.toUpperCase()}</div>
-             <span class="count">×${fmt(count)}</span>
-           </div>
-           <div class="meta"><b>${r.label}</b><br>1 in ${fmt(n * TOTAL_WEIGHT / m.weight)}</div>`
-        : `<div class="frame"><img class="border" src="${LOCKED_FRAME}" alt="Not found yet"></div>
-           <div class="meta"><b>${r.label}</b><br>1 in ${fmt(n * TOTAL_WEIGHT / m.weight)}</div>`;
-      cards.appendChild(card);
-    }
-    $('collCount').textContent = `${found} of ${MONKEYS.length} found`;
+  // ---------- Tabs ----------
+  let tab = store.get('lotto.tab', 'album');
+  let pending = null;   // two-tap confirmations
+  function confirmTap(key) {
+    if (pending === key) { pending = null; return true; }
+    pending = key; renderTab();
+    setTimeout(() => { if (pending === key) { pending = null; renderTab(); } }, 3000);
+    return false;
   }
+  const thumb = (m) => S.seen[m.id]
+    ? `<img class="thumb" src="${m.src}" alt="" style="--rc:${RAR[m.rarity].color};object-position:${m.pos}">`
+    : `<div class="thumb unk" style="--rc:${RAR[m.rarity].color}">?</div>`;
+
+  function albumHTML() {
+    const found = MONKEYS.filter(m => S.seen[m.id]).length;
+    const p = winChance();
+    const tw = MONKEYS.reduce((s, m) => s + m.weight * (S.seen[m.id] ? 1 : 3), 0);
+    let h = `<h2>ALBUM <span>${found} of ${MONKEYS.length} found</span></h2>`;
+    h += `<p class="note">${S.albumBonus ? '<b>Set complete:</b> +10% prizes and the Gold Cabinet are yours.' : 'Find all 9 for <b>+10% prizes</b> and a <b>Gold Cabinet</b>.'} Perks work while you own a copy.</p><div class="cards">`;
+    for (const m of MONKEYS) {
+      const r = RAR[m.rarity], c = S.col[m.id] || { n: 0, shiny: 0, lvl: 1 };
+      const odds = fmt(1 / (p * (m.weight * (S.seen[m.id] ? 1 : 3)) / tw));
+      const [wl, wt, ww, wh] = r.win;
+      const has = owned(m.id) > 0;
+      const tags = [c.n ? `<span>×${c.n}</span>` : '', c.shiny ? `<span class="sh">SHINY ${c.shiny}</span>` : '', has && c.lvl > 1 ? `<span>LV${c.lvl}</span>` : '', S.zoo.includes(m.id) ? '<span class="zo">ZOO</span>' : ''].join('');
+      const lvlBtn = c.n >= 4 && c.lvl < 3 ? `<button class="pbtn" type="button" data-act="level" data-id="${m.id}">LV UP (3)</button>` : '';
+      h += `<div class="card ${m.rarity}${S.seen[m.id] ? ' found' : ''}" style="--rc:${r.color}">` +
+        (S.seen[m.id]
+          ? `<div class="frame"><img class="art" src="${m.src}" alt="${esc(m.name)}" style="left:${wl}%;top:${wt}%;width:${ww}%;height:${wh}%;object-position:${m.pos}${has ? '' : ';filter:grayscale(1) brightness(.6)'}">
+               <img class="border" src="${r.frame}" alt=""><div class="nm" style="top:${r.name[0]}%;height:${r.name[1]}%">${esc(m.name.toUpperCase())}</div><div class="tags">${tags}</div></div>`
+          : `<div class="frame"><img class="border" src="${LOCKED_FRAME}" alt="Not found yet"></div>`) +
+        `<div class="meta"><b>${r.label}</b> · 1 in ${odds}</div>` +
+        `<div class="perk">${S.seen[m.id] ? esc(PERKS[m.perk].text(PERKS[m.perk].vals[c.lvl - 1])) : '???'}</div>${lvlBtn}</div>`;
+    }
+    return h + '</div>';
+  }
+
+  function marketHTML() {
+    let h = `<h2>MONKEY MARKET <span>prices change every ticket</span></h2>`;
+    if (S.event) h += `<div class="banner ${S.event.kind === 'crash' ? 'crash' : ''}">${S.event.kind === 'craze' ? '📈' : '📉'} ${esc(BY_ID[S.event.id].name)} ${S.event.kind === 'craze' ? 'craze: prices ×3' : 'crash: prices −50%'} for ${S.event.left} more tickets</div>`;
+    h += '<div class="rows">';
+    for (const m of MONKEYS) {
+      if (!S.seen[m.id]) { h += `<div class="row">${thumb(m)}<div class="rinfo"><b>???</b><small>${RAR[m.rarity].label}</small></div><span></span></div>`; continue; }
+      const c = S.col[m.id] || { n: 0, shiny: 0 };
+      const p = marketPrice(m.id), prev = S.mprev[m.id] ?? S.market[m.id];
+      const arrow = S.market[m.id] > prev ? '<span class="up">▲</span>' : S.market[m.id] < prev ? '<span class="down">▼</span>' : '';
+      const last = owned(m.id) === 1;
+      let btns = '';
+      if (c.n > 0) {
+        const key = `sell:${m.id}`;
+        btns += canSell(m.id, false)
+          ? `<button class="pbtn${last ? ' warn' : ''}" type="button" data-act="sell" data-id="${m.id}">${pending === key ? 'SURE? TAP' : 'SELL ' + money$(p)}</button>`
+          : `<button class="pbtn" type="button" disabled>IN ZOO</button>`;
+      }
+      if (c.shiny > 0) {
+        const key = `sellS:${m.id}`;
+        btns += `<button class="pbtn${last ? ' warn' : ''}" type="button" data-act="sellS" data-id="${m.id}"${canSell(m.id, true) ? '' : ' disabled'}>${pending === key ? 'SURE? TAP' : 'SHINY ' + money$(marketPrice(m.id, true))}</button>`;
+      }
+      h += `<div class="row">${thumb(m)}<div class="rinfo"><b>${esc(m.name)}</b><small>${arrow} ${money$(p)} · own ×${c.n}${c.shiny ? ` · shiny ×${c.shiny}` : ''}</small></div><div class="ract">${btns}</div></div>`;
+    }
+    h += '</div><h2 style="margin-top:14px">TRADE-UPS</h2><div class="rows">';
+    for (const [from, to] of [['common', 'uncommon'], ['uncommon', 'rare']]) {
+      const group = MONKEYS.filter(m => m.rarity === from);
+      const ok = group.every(m => (S.col[m.id]?.n || 0) >= 2);
+      h += `<div class="row wide"><div class="rinfo"><b>1 spare of each ${from} → random ${to}</b><small>${group.map(m => esc(m.name)).join(', ')}</small></div><div class="ract"><button class="pbtn" type="button" data-act="trade" data-id="${from}"${ok ? '' : ' disabled'}>TRADE</button></div></div>`;
+    }
+    return h + '</div><p class="note" style="margin-top:8px">Level up a monkey by trading 3 spare copies (button on its album card).</p>';
+  }
+
+  function zooHTML() {
+    const slots = zooSlots();
+    const rate = S.zoo.reduce((s, id) => s + zooRate(id), 0);
+    let h = `<h2>MONKEY ZOO <span>${money$(rate * 60)}/hour</span></h2><p class="note">Monkeys in the zoo earn money, even while you're away (up to 8 hours). Zoo monkeys still give their perks but can't be sold.</p><div class="rows">`;
+    for (let i = 0; i < slots; i++) {
+      const id = S.zoo[i];
+      if (id) {
+        const m = BY_ID[id];
+        h += `<div class="row">${thumb(m)}<div class="rinfo"><b>${esc(m.name)}</b><small>${money$(zooRate(id) * 60)}/hour</small></div><div class="ract"><button class="pbtn alt" type="button" data-act="unzoo" data-id="${id}">REMOVE</button></div></div>`;
+      } else {
+        const opts = MONKEYS.filter(m => owned(m.id) && !S.zoo.includes(m.id));
+        h += `<div class="row"><div class="thumb unk">+</div><div class="rinfo"><b>Empty enclosure</b>${opts.length ? `<select id="zooPick${i}" aria-label="Monkey for enclosure ${i + 1}">${opts.map(m => `<option value="${m.id}">${esc(m.name)} (${money$(zooRate(m.id) * 60)}/h)</option>`).join('')}</select>` : '<small>Win a monkey to fill it</small>'}</div><div class="ract">${opts.length ? `<button class="pbtn" type="button" data-act="zoo" data-id="${i}">ADD</button>` : ''}</div></div>`;
+      }
+    }
+    return h + `</div><p class="note" style="margin-top:8px">Buy more enclosures in the SHOP.</p>`;
+  }
+
+  function shopHTML() {
+    let h = `<h2>MACHINE SHOP <span>${S.mode === 'real' ? 'not used in Real mode' : 'upgrades'}</span></h2><div class="rows">`;
+    for (const u of UPGRADES) {
+      const lv = S.up[u.key], max = u.costs.length;
+      const cost = u.costs[lv];
+      let act = lv < max
+        ? `<button class="pbtn" type="button" data-act="buy" data-id="${u.key}"${S.money >= cost ? '' : ' disabled'}>BUY ${money$(cost)}</button>`
+        : u.toggle ? `<button class="pbtn ${S.up[u.toggle] ? 'on' : 'alt'}" type="button" data-act="toggle" data-id="${u.toggle}">${S.up[u.toggle] ? 'ON' : 'OFF'}</button>` : `<button class="pbtn" type="button" disabled>MAX</button>`;
+      if (u.toggle && lv >= max) act = act;
+      h += `<div class="row wide"><div class="rinfo"><b>${u.name}${max > 1 ? ` · LV ${lv}/${max}` : lv ? ' · OWNED' : ''}</b><small>${u.desc}</small></div><div class="ract">${act}</div></div>`;
+    }
+    h += `<div class="row wide"><div class="rinfo"><b>Gold Cabinet</b><small>${S.albumBonus ? 'Unlocked by completing the album' : 'Complete the album to unlock'}</small></div><div class="ract">${S.albumBonus ? `<button class="pbtn ${S.up.skinOn ? 'on' : 'alt'}" type="button" data-act="toggle" data-id="skinOn">${S.up.skinOn ? 'ON' : 'OFF'}</button>` : '<button class="pbtn" type="button" disabled>LOCKED</button>'}</div></div>`;
+    return h + '</div>';
+  }
+
+  function questsHTML() {
+    ensureQuests();
+    let h = `<h2>DAILY QUESTS <span>new ones tomorrow</span></h2><div class="rows">`;
+    for (const q of S.quests.list) {
+      const d = QUESTS[q.id], done = q.prog >= d.goal;
+      h += `<div class="row wide"><div class="rinfo"><b>${esc(d.text)}</b><small>Reward ${money$(d.reward)} · ${fmt(q.prog)}/${d.goal}</small><div class="prog"><i style="width:${q.prog / d.goal * 100}%"></i></div></div>` +
+        `<div class="ract">${q.claimed ? '<button class="pbtn" type="button" disabled>DONE</button>' : `<button class="pbtn" type="button" data-act="claim" data-id="${q.id}"${done ? '' : ' disabled'}>CLAIM</button>`}</div></div>`;
+    }
+    return h + '</div>';
+  }
+
+  function retireHTML() {
+    const gain = S.money >= 1000 ? Math.floor(Math.sqrt(S.money / 100)) : 0;
+    let h = `<h2>RETIRE <span>golden bananas: ${S.golden}</span></h2>`;
+    h += `<p class="note">Retire with <b>$1,000 or more</b> to earn <b>golden bananas</b>. Each one gives <b>+2% odds and +2% prizes</b> forever. Retiring resets your money to $20 and your shop upgrades, but you keep your album, zoo and golden bananas.</p>`;
+    h += `<div class="rows"><div class="row wide"><div class="rinfo"><b>${gain ? `Retire now for ${gain} golden banana${gain === 1 ? '' : 's'}` : 'Not enough money yet'}</b><small>You have ${money$(S.money)}</small></div><div class="ract"><button class="pbtn" type="button" data-act="retire"${gain ? '' : ' disabled'}>${pending === 'retire' ? 'SURE? TAP' : 'RETIRE'}</button></div></div>`;
+    h += `<div class="row wide"><div class="rinfo"><b>Lifetime</b><small>${fmt(S.life.tickets)} tickets · ${fmt(S.life.wins)} monkeys · ${fmt(S.life.sold)} sold<br>Spent ${money$(S.life.spent)} · won ${money$(S.life.won)}</small></div><span></span></div>`;
+    h += `<div class="row wide"><div class="rinfo"><b>Start completely over</b><small>Deletes your album, zoo, upgrades and stats</small></div><div class="ract"><button class="pbtn warn" type="button" data-act="wipe">${pending === 'wipe' ? 'SURE? TAP' : 'RESET ALL'}</button></div></div></div>`;
+    return h;
+  }
+
+  function renderTab() {
+    ensureQuests();
+    for (const b of $('tabs').children) {
+      b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+      if (b.dataset.tab === 'quests') {
+        const ready = S.quests.list.some(q => !q.claimed && q.prog >= QUESTS[q.id].goal);
+        b.innerHTML = 'QUESTS' + (ready ? '<span class="dot"></span>' : '');
+      }
+    }
+    const body = $('tabBody'), top = body.scrollTop;
+    body.innerHTML = { album: albumHTML, market: marketHTML, zoo: zooHTML, shop: shopHTML, quests: questsHTML, retire: retireHTML }[tab]();
+    body.scrollTop = top;
+  }
+  function renderAll() { renderMachine(); renderStats(); renderTab(); }
+
+  $('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('.tab'); if (!b) return;
+    tab = b.dataset.tab; store.set('lotto.tab', tab); pending = null;
+    $('tabBody').scrollTop = 0; renderTab();
+  });
+
+  // All panel buttons go through here
+  $('tabBody').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+    ensureAudio();
+    const { act, id } = b.dataset;
+    if (act === 'sell' || act === 'sellS') {
+      const shiny = act === 'sellS';
+      if (owned(id) === 1 && !confirmTap(`${act === 'sell' ? 'sell' : 'sellS'}:${id}`)) return;
+      sellOne(id, shiny, marketPrice(id, shiny));
+    } else if (act === 'level') {
+      const c = col(id);
+      if (c.n >= 4 && c.lvl < 3) { c.n -= 3; c.lvl++; quest('level'); sfxClick(); toast(`${BY_ID[id].name} is now level ${c.lvl}!`); }
+    } else if (act === 'trade') {
+      const group = MONKEYS.filter(m => m.rarity === id);
+      if (!group.every(m => (S.col[m.id]?.n || 0) >= 2)) return;
+      group.forEach(m => col(m.id).n--);
+      const pool = MONKEYS.filter(m => m.rarity === (id === 'common' ? 'uncommon' : 'rare'));
+      const got = pool[randInt(pool.length)];
+      col(got.id).n++; S.seen[got.id] = true;
+      sfxWin(got.rarity); toast(`Trade-up: you got ${got.name}!`);
+    } else if (act === 'zoo') {
+      const sel = $('zooPick' + id);
+      if (sel && S.zoo.length < zooSlots() && !S.zoo.includes(sel.value)) { collectZoo(true); S.zoo.push(sel.value); quest('zoo2', S.zoo.length, true); sfxClick(); }
+    } else if (act === 'unzoo') {
+      collectZoo(true); S.zoo = S.zoo.filter(x => x !== id); sfxClick();
+    } else if (act === 'buy') {
+      const u = UPGRADES.find(x => x.key === id), cost = u.costs[S.up[id]];
+      if (cost != null && S.money >= cost) {
+        S.money = round2(S.money - cost); S.up[id]++;
+        if (u.toggle) S.up[u.toggle] = true;
+        sfxCash(); toast(`Bought ${u.name}!`);
+      }
+    } else if (act === 'toggle') {
+      S.up[id] = !S.up[id]; sfxClick();
+    } else if (act === 'claim') {
+      const q = S.quests.list.find(x => x.id === id);
+      if (q && !q.claimed && q.prog >= QUESTS[id].goal) { q.claimed = true; S.money = round2(S.money + QUESTS[id].reward); sfxCash(); toast(`Quest reward: ${money$(QUESTS[id].reward)}`); }
+    } else if (act === 'retire') {
+      const gain = S.money >= 1000 ? Math.floor(Math.sqrt(S.money / 100)) : 0;
+      if (!gain || !confirmTap('retire')) return;
+      const skin = S.up.skinOn;
+      S.golden += gain; S.money = 20; S.up = newUpgrades(); S.up.skinOn = skin;
+      S.meter = 0; S.lucky = 0; S.failStreak = 0; S.run = newRun(); S.zoo = S.zoo.slice(0, zooSlots());
+      sfxWin('rare'); celebrate('rare'); toast(`Retired! +${gain} golden banana${gain === 1 ? '' : 's'}`);
+    } else if (act === 'wipe') {
+      if (!confirmTap('wipe')) return;
+      store.del(SAVE_KEY); store.del('lotto.collection'); S = defaults(); ensureQuests(); clearResultFx(); show('prompt'); toast('Everything has been reset');
+    }
+    save(); renderAll();
+  });
 
   // Difficulty buttons on the machine
   for (const b of dbtns) {
     b.addEventListener('click', () => {
       if (busy) return;
-      ensureAudio();
-      sfxClick();
+      ensureAudio(); sfxClick();
       const glow = $('glow');
       glow.style.left = (parseFloat(getComputedStyle(b).left) / $('machine').clientWidth * 100 - 3.4) + '%';
       glow.hidden = false;
       play(glow, 'glow', { fps: 8, onEnd: () => setTimeout(() => { glow.hidden = true; }, 160) });
-      mode = b.dataset.mode;
-      store.set('lotto.mode', mode);
-      renderOdds(); renderStats(); renderCollection();
+      S.mode = b.dataset.mode; save(); renderAll();
     });
   }
 
-  // ---------- Audio (all synthesized, no files) ----------
+  // ================= Audio (all synthesized) =================
   let ac = null, master, musicGain, sfxGain, noiseBuf;
   function ensureAudio() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
@@ -701,172 +1125,118 @@
     startMusic();
   }
   const NOTE = { C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11 };
-  function freq(name) {
-    const m = /^([A-G]#?)(\d)$/.exec(name);
-    const midi = 12 * (+m[2] + 1) + NOTE[m[1]];
-    return 440 * 2 ** ((midi - 69) / 12);
-  }
+  function freq(name) { const m = /^([A-G]#?)(\d)$/.exec(name); return 440 * 2 ** ((12 * (+m[2] + 1) + NOTE[m[1]] - 69) / 12); }
   function tone(dest, f, t, dur, { type = 'square', vol = 0.2, attack = 0.005, vibrato = 0, slideTo = 0 } = {}) {
-    const o = ac.createOscillator();
-    const g = ac.createGain();
-    o.type = type;
-    o.frequency.setValueAtTime(f, t);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
     if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-    if (vibrato) {
-      const lfo = ac.createOscillator(), lg = ac.createGain();
-      lfo.frequency.value = 6; lg.gain.value = vibrato;
-      lfo.connect(lg); lg.connect(o.frequency);
-      lfo.start(t); lfo.stop(t + dur + 0.05);
-    }
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(dest);
-    o.start(t); o.stop(t + dur + 0.05);
+    if (vibrato) { const l = ac.createOscillator(), lg = ac.createGain(); l.frequency.value = 6; lg.gain.value = vibrato; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + dur + 0.05); }
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.05);
   }
   function noise(dest, t, dur, vol, hp) {
     const s = ac.createBufferSource(); s.buffer = noiseBuf;
     const f = ac.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
-    const g = ac.createGain();
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    s.connect(f); f.connect(g); g.connect(dest);
-    s.start(t); s.stop(t + dur + 0.01);
+    const g = ac.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(dest); s.start(t); s.stop(t + dur + 0.01);
   }
-
-  // Sound effects
-  function sfxClick() { if (ac) tone(sfxGain, 520, ac.currentTime, 0.05, { vol: 0.08 }); }
-  function sfxReelStop() { if (ac && sfxOn) tone(sfxGain, 160, ac.currentTime, 0.08, { type: 'square', vol: 0.1, slideTo: 80 }); }
-  function sfxTick() { if (ac) tone(sfxGain, 900 + Math.random() * 500, ac.currentTime, 0.04, { vol: 0.06 }); }
+  const sfxOK = () => ac && sfxOn;
+  function sfxClick() { if (sfxOK()) tone(sfxGain, 520, ac.currentTime, 0.05, { vol: 0.08 }); }
+  function sfxTick() { if (sfxOK()) tone(sfxGain, 900 + Math.random() * 500, ac.currentTime, 0.04, { vol: 0.05 }); }
+  function sfxReelStop() { if (sfxOK()) tone(sfxGain, 160, ac.currentTime, 0.08, { vol: 0.1, slideTo: 80 }); }
+  function sfxCash() {
+    if (!sfxOK()) return; const t = ac.currentTime;
+    noise(sfxGain, t, 0.06, 0.1, 3000);
+    tone(sfxGain, freq('E6'), t + 0.05, 0.12, { vol: 0.1 }); tone(sfxGain, freq('A6'), t + 0.14, 0.3, { vol: 0.1 });
+  }
   function sfxLever() {
-    if (!ac) return;
-    const t = ac.currentTime;
-    noise(sfxGain, t, 0.12, 0.12, 1500);                                  // ratchet
-    tone(sfxGain, 300, t, 0.18, { type: 'square', vol: 0.08, slideTo: 90 }); // clunk
-    tone(sfxGain, 180, t + 0.32, 0.12, { type: 'square', vol: 0.06, slideTo: 360 }); // spring back
+    if (!sfxOK()) return; const t = ac.currentTime;
+    noise(sfxGain, t, 0.12, 0.12, 1500);
+    tone(sfxGain, 300, t, 0.18, { vol: 0.08, slideTo: 90 });
+    tone(sfxGain, 180, t + 0.32, 0.12, { vol: 0.06, slideTo: 360 });
   }
   function sfxFail() {
-    if (!ac) return;
-    const t = ac.currentTime;
-    // Sad trombone: wah, wah, wah, waaaah
-    const notes = ['G3', 'F#3', 'F3', 'E3'];
-    notes.forEach((n, i) => {
-      const last = i === notes.length - 1;
-      tone(sfxGain, freq(n), t + i * 0.28, last ? 0.9 : 0.26, { type: 'sawtooth', vol: 0.12, attack: 0.03, vibrato: last ? 6 : 0 });
-    });
+    if (!sfxOK()) return; const t = ac.currentTime;
+    ['G3', 'F#3', 'F3', 'E3'].forEach((n, i) => tone(sfxGain, freq(n), t + i * 0.28, i === 3 ? 0.9 : 0.26, { type: 'sawtooth', vol: 0.12, attack: 0.03, vibrato: i === 3 ? 6 : 0 }));
   }
   function sfxWin(rarity) {
     if (!ac) return;
+    const big = RAR[rarity].rank >= 2;
+    duckMusic(big ? 4.2 : 2.6);
+    if (!sfxOn) return;
     const t = ac.currentTime;
-    duckMusic(rarity === 'rare' ? 4.2 : 2.6);
     const run = ['C5', 'E5', 'G5', 'C6', 'G5', 'C6'];
     run.forEach((n, i) => tone(sfxGain, freq(n), t + i * 0.09, 0.14, { vol: 0.14 }));
-    const chordAt = t + run.length * 0.09;
-    ['C5', 'E5', 'G5', 'C6'].forEach(n => tone(sfxGain, freq(n), chordAt, 1.1, { type: 'triangle', vol: 0.16 }));
-    // coins clinking into the tray
-    for (let i = 0; i < 8; i++) tone(sfxGain, freq(i % 2 ? 'E6' : 'B5'), chordAt + 0.05 + i * 0.11, 0.09, { vol: 0.07 });
-    if (rarity !== 'common') {
-      ['D6', 'F6', 'A6', 'D7'].forEach((n, i) => tone(sfxGain, freq(n), chordAt + 0.5 + i * 0.07, 0.12, { type: 'triangle', vol: 0.09 }));
-    }
-    if (rarity === 'rare') {
-      // Extra-long royal fanfare for the rare monkey
-      const fan = [['G5', 0.18], ['G5', 0.18], ['G5', 0.18], ['C6', 0.5], ['A5', 0.18], ['B5', 0.18], ['C6', 0.9]];
-      let at = chordAt + 1.0;
-      for (const [n, d] of fan) {
-        tone(sfxGain, freq(n), at, d * 0.95, { vol: 0.14 });
-        tone(sfxGain, freq(n) / 2, at, d * 0.95, { type: 'triangle', vol: 0.1 });
-        at += d;
+    const at0 = t + run.length * 0.09;
+    ['C5', 'E5', 'G5', 'C6'].forEach(n => tone(sfxGain, freq(n), at0, 1.1, { type: 'triangle', vol: 0.16 }));
+    for (let i = 0; i < 8; i++) tone(sfxGain, freq(i % 2 ? 'E6' : 'B5'), at0 + 0.05 + i * 0.11, 0.09, { vol: 0.07 });
+    if (RAR[rarity].rank >= 1) ['D6', 'F6', 'A6', 'D7'].forEach((n, i) => tone(sfxGain, freq(n), at0 + 0.5 + i * 0.07, 0.12, { type: 'triangle', vol: 0.09 }));
+    if (big) {
+      let at = at0 + 1.0;
+      for (const [n, d] of [['G5', 0.18], ['G5', 0.18], ['G5', 0.18], ['C6', 0.5], ['A5', 0.18], ['B5', 0.18], ['C6', 0.9]]) {
+        tone(sfxGain, freq(n), at, d * 0.95, { vol: 0.14 }); tone(sfxGain, freq(n) / 2, at, d * 0.95, { type: 'triangle', vol: 0.1 }); at += d;
       }
       ['C5', 'E5', 'G5', 'C6', 'E6'].forEach(n => tone(sfxGain, freq(n), at, 1.4, { type: 'triangle', vol: 0.1 }));
     }
   }
-
-  // Background music: a bouncy casino-jungle loop, scheduled slightly ahead of time.
-  const MELODY = [
-    'E5','G5','A5','G5','E5','D5','C5','D5',
-    'E5','G5','A5','C6','A5','G5','E5', null,
-    'D5','E5','G5','E5','D5','C5','A4','C5',
-    'D5','E5','D5','C5','A4', null,'C5', null,
-  ];
+  const MELODY = ['E5','G5','A5','G5','E5','D5','C5','D5','E5','G5','A5','C6','A5','G5','E5',null,'D5','E5','G5','E5','D5','C5','A4','C5','D5','E5','D5','C5','A4',null,'C5',null];
   const BASS = ['C3', 'A2', 'F2', 'G2'];
-  const STEP = 60 / 132 / 2; // eighth notes at 132 bpm
+  const STEP = 60 / 132 / 2;
   let step = 0, nextAt = 0, musicTimer = null;
   function startMusic() {
     if (!ac || musicTimer) return;
     nextAt = ac.currentTime + 0.1;
     musicTimer = setInterval(() => {
-      if (nextAt < ac.currentTime) nextAt = ac.currentTime + 0.05; // tab was in the background
+      if (nextAt < ac.currentTime) nextAt = ac.currentTime + 0.05;
       while (nextAt < ac.currentTime + 0.15) {
-        const i = step % MELODY.length;
-        const bar = Math.floor(i / 8);
-        if (MELODY[i]) tone(musicGain, freq(MELODY[i]), nextAt, STEP * 0.9, { type: 'square', vol: 0.07 });
-        if (i % 2 === 0) {
-          const b = freq(BASS[bar]) * (i % 4 === 2 ? 2 : 1);
-          tone(musicGain, b, nextAt, STEP * 1.6, { type: 'triangle', vol: 0.16 });
-        } else {
-          noise(musicGain, nextAt, 0.05, 0.035, 7000);
-        }
-        nextAt += STEP;
-        step++;
+        const i = step % MELODY.length, bar = Math.floor(i / 8);
+        if (MELODY[i]) tone(musicGain, freq(MELODY[i]), nextAt, STEP * 0.9, { vol: 0.07 });
+        if (i % 2 === 0) tone(musicGain, freq(BASS[bar]) * (i % 4 === 2 ? 2 : 1), nextAt, STEP * 1.6, { type: 'triangle', vol: 0.16 });
+        else noise(musicGain, nextAt, 0.05, 0.035, 7000);
+        nextAt += STEP; step++;
       }
     }, 25);
   }
   function duckMusic(seconds) {
     if (!ac || !musicOn) return;
-    const t = ac.currentTime;
-    musicGain.gain.cancelScheduledValues(t);
-    musicGain.gain.setValueAtTime(musicGain.gain.value, t);
-    musicGain.gain.linearRampToValueAtTime(0.08, t + 0.1);
-    musicGain.gain.setValueAtTime(0.08, t + seconds);
-    musicGain.gain.linearRampToValueAtTime(0.5, t + seconds + 1);
+    const t = ac.currentTime, g = musicGain.gain;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(0.08, t + 0.1); g.setValueAtTime(0.08, t + seconds); g.linearRampToValueAtTime(0.5, t + seconds + 1);
   }
-
   function renderAudioButtons() {
     $('musicBtn').setAttribute('aria-pressed', String(musicOn));
     $('sfxBtn').setAttribute('aria-pressed', String(sfxOn));
   }
   $('musicBtn').addEventListener('click', () => {
-    musicOn = !musicOn; store.set('lotto.music', musicOn); renderAudioButtons();
-    ensureAudio();
-    if (ac) {
-      musicGain.gain.cancelScheduledValues(ac.currentTime);
-      musicGain.gain.setTargetAtTime(musicOn ? 0.5 : 0, ac.currentTime, 0.05);
-    }
+    musicOn = !musicOn; store.set('lotto.music', musicOn); renderAudioButtons(); ensureAudio();
+    if (ac) { musicGain.gain.cancelScheduledValues(ac.currentTime); musicGain.gain.setTargetAtTime(musicOn ? 0.5 : 0, ac.currentTime, 0.05); }
   });
   $('sfxBtn').addEventListener('click', () => {
-    sfxOn = !sfxOn; store.set('lotto.sfx', sfxOn); renderAudioButtons();
-    ensureAudio();
+    sfxOn = !sfxOn; store.set('lotto.sfx', sfxOn); renderAudioButtons(); ensureAudio();
     if (ac) sfxGain.gain.setTargetAtTime(sfxOn ? 1 : 0, ac.currentTime, 0.02);
   });
 
-  // ---------- Confetti + bananas ----------
+  // ================= Bananas + confetti =================
   const cv = $('fx'), cx = cv.getContext('2d');
   let parts = [], fxRunning = false;
-  // A9 particle sheets drawn onto the canvas
   const PIMG = {};
   for (const k of ['banana', 'confetti-gold', 'confetti-color']) { PIMG[k] = new Image(); PIMG[k].src = SHEET[k]; }
   function sizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
     cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
-    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    cx.imageSmoothingEnabled = false;
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.imageSmoothingEnabled = false;
   }
   addEventListener('resize', sizeCanvas); sizeCanvas();
   function celebrate(rarity) {
-    const count = reduceMotion ? 20 : rarity === 'rare' ? 160 : rarity === 'uncommon' ? 90 : 60;
+    const rank = RAR[rarity].rank;
+    const count = reduceMotion ? 20 : [60, 90, 150, 220][rank];
     for (let i = 0; i < count; i++) {
       const roll = Math.random();
-      const kind = roll < 0.35 ? 'banana' : (rarity === 'rare' || roll < 0.6) ? 'confetti-gold' : 'confetti-color';
+      const kind = roll < 0.35 ? 'banana' : (rank >= 2 || roll < 0.6) ? 'confetti-gold' : 'confetti-color';
       parts.push({
-        kind,
-        sub: randInt(3),          // which colour strip of confetti-color
-        fps: 8 + Math.random() * 6,
-        born: performance.now(),
-        x: Math.random() * innerWidth,
-        y: -20 - Math.random() * innerHeight * 0.6,
-        vx: (Math.random() - 0.5) * 3,
-        vy: 2 + Math.random() * 3,
-        rot: Math.random() * Math.PI * 2,
-        vr: (Math.random() - 0.5) * 0.25,
+        kind, sub: randInt(3), fps: 8 + Math.random() * 6, born: performance.now(),
+        x: Math.random() * innerWidth, y: -20 - Math.random() * innerHeight * 0.6,
+        vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 3,
         size: kind === 'banana' ? 26 + Math.random() * 14 : 12 + Math.random() * 6,
       });
     }
@@ -875,168 +1245,231 @@
   function fxLoop() {
     cx.clearRect(0, 0, innerWidth, innerHeight);
     for (const p of parts) {
-      p.vy += 0.06; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      p.vy += 0.06; p.x += p.vx; p.y += p.vy;
       const img = PIMG[p.kind];
       if (!img.complete || !img.naturalWidth) continue;
       const [n, fw, fh] = FR[p.kind];
-      const per = p.kind === 'confetti-color' ? 3 : n;      // confetti-color holds 3 strips of 3 frames
-      const base = p.kind === 'confetti-color' ? p.sub * 3 : 0;
+      const per = p.kind === 'confetti-color' ? 3 : n, base = p.kind === 'confetti-color' ? p.sub * 3 : 0;
       const f = base + Math.floor(((performance.now() - p.born) / 1000) * p.fps) % per;
       const dw = p.size, dh = p.size * fh / fw;
       cx.drawImage(img, f * fw, 0, fw, fh, Math.round(p.x - dw / 2), Math.round(p.y - dh / 2), Math.round(dw), Math.round(dh));
     }
     parts = parts.filter(p => p.y < innerHeight + 60);
-    if (parts.length) requestAnimationFrame(fxLoop);
-    else { fxRunning = false; cx.clearRect(0, 0, innerWidth, innerHeight); }
+    if (parts.length) requestAnimationFrame(fxLoop); else { fxRunning = false; cx.clearRect(0, 0, innerWidth, innerHeight); }
   }
 
-  // ---------- Playing ----------
+  // ================= Playing =================
+  let busy = false;
   function restartAnim(el, cls) {
     if (cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); return; }
     el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
   }
-  function setButtonsDisabled(v) { for (const b of dbtns) b.disabled = v; }
+  const setButtonsDisabled = (v) => { for (const b of dbtns) b.disabled = v; };
+  function clearResultFx() {
+    $('screen').classList.remove('glow');
+    for (const id of ['siren', 'coins', 'tromb', 'winSpark']) { stopSprite($(id)); $(id).hidden = true; }
+    stopSprite($('payCoin'));
+    $('payout').classList.remove('show');
+  }
+
+  // One ticket's draw. Updates meter/streak/market now; prizes are paid in finish().
+  function drawOnce() {
+    const size = meterSize();
+    let won, guaranteed = false;
+    if (size && S.meter >= size) { won = true; guaranteed = true; }
+    else if (S.mode === 'real') won = randInt(MODES.real.odds) === 0;
+    else won = randFloat() < winChance();
+    if (S.lucky > 0) S.lucky--;
+    driftMarket();
+    const r = S.run;
+    r.sinceWin++;
+    if (won) {
+      S.meter = 0; S.failStreak = 0;
+      const m = pickMonkey();
+      const shiny = randInt(SHINY_ODDS) === 0;
+      let prize = prizeFor(m), party = false;
+      const pc = perk('party');
+      if (pc && randFloat() < pc) { prize *= 2; party = true; }
+      r.lastWinTook = r.sinceWin; r.sinceWin = 0; r.streak = 0;
+      S.seen[m.id] = true;    // count as found right away so a triple pull favours other new ones
+      return { won, m, shiny, prize: round2(prize), party, guaranteed };
+    }
+    r.streak++; r.longest = Math.max(r.longest, r.streak);
+    quest('lose10', r.streak, true);
+    if (size) S.meter = Math.min(size, S.meter + meterGain());
+    const refund = perk('refund') > 0 && randFloat() < perk('refund');
+    let lucky = false;
+    if (S.mode !== 'real') {
+      S.failStreak++;
+      if (S.failStreak >= 10 && S.lucky === 0) { S.lucky = 5; S.failStreak = 0; lucky = true; }
+    }
+    return { won: false, refund, lucky };
+  }
 
   function buyTicket() {
     if (busy || !$('over').hidden) return;
     ensureAudio();
-    if (money < TICKET) { gameOver(); return; }
+    const price = ticketPrice();
+    if (S.money + 1e-9 < price) { gameOver(); return; }
+    let count = S.up.triple && S.up.tripleOn ? 3 : 1;
+    count = Math.max(1, Math.min(count, Math.floor((S.money + 1e-9) / price)));
     busy = true;
-    money -= TICKET; tickets++; sinceWin++;
-    renderStats();
-    setButtonsDisabled(true);
-    clearResultFx();
-    play($('lever'), 'lever', { fps: 18, onEnd: () => setSprite($('lever'), 'lever', 0) });
-    if (sfxOn) sfxLever();
+    S.money = round2(S.money - price * count);
+    S.life.spent = round2(S.life.spent + price * count);
+    S.run.tickets += count; S.life.tickets += count;
+    quest('pull30', count);
+    const results = [];
+    for (let i = 0; i < count; i++) results.push(drawOnce());
+    save();
+    renderMachine(); setButtonsDisabled(true); clearResultFx();
+    restartAnim($('lever'), 'pull');
+    sfxLever();
 
-    const n = MODES[mode].odds;
-    const digits = String(n - 1).length;
+    const n = MODES[S.mode].odds, digits = String(n - 1).length;
     const reels = [...document.querySelectorAll('.reel')];
+    const won = results.some(r => r.won);
     const startDraw = () => {
       show('drawing');
-      reels.forEach((r, i) => play(r, 'reel-spin', { fps: 16, loop: true, offset: i * 70 }));
-      const spin = setInterval(() => {
-        $('ball').textContent = 'No. ' + String(randInt(n)).padStart(digits, '0');
-        if (sfxOn) sfxTick();
-      }, 75);
+      reels.forEach((r, i) => { r.classList.remove('stopped', 'lost'); play(r, 'reel-spin', { fps: 16, loop: true, offset: i * 70 }); });
+      const spin = setInterval(() => { $('ball').textContent = 'No. ' + String(randInt(n)).padStart(digits, '0'); sfxTick(); }, 75);
       setTimeout(() => {
         clearInterval(spin);
-        const result = randInt(n); // you win only if this is exactly 0
-        $('ball').textContent = 'No. ' + String(result).padStart(digits, '0');
-        // reels stop one after another, then the result shows
-        const STOP_GAP = reduceMotion ? 0 : 170;
-        reels.forEach((r, i) => setTimeout(() => { play(r, 'reel-stop', { fps: 20 }); sfxReelStop(); }, i * STOP_GAP));
-        setTimeout(() => finish(result === 0), reduceMotion ? 50 : STOP_GAP * 2 + 380);
+        $('ball').textContent = won ? '★ WINNER ★' : 'No. ' + String(1 + randInt(n - 1)).padStart(digits, '0');
+        const GAP = reduceMotion ? 0 : 170;
+        reels.forEach((r, i) => setTimeout(() => { play(r, 'reel-stop', { fps: 20 }); restartAnim(r, 'stopped'); if (!won && i === 2) reels.forEach(x => x.classList.add('lost')); sfxReelStop(); }, i * GAP));
+        setTimeout(() => finish(results, price), reduceMotion ? 50 : GAP * 2 + 320);
       }, reduceMotion ? 300 : 850);
     };
     setTimeout(startDraw, reduceMotion ? 0 : 300);
   }
 
-  // Hide and stop everything left over from the last result
-  function clearResultFx() {
-    $('screen').classList.remove('rare');
-    for (const id of ['siren', 'coins', 'tromb']) { stopSprite($(id)); $(id).hidden = true; }
-    for (const id of ['rareMonkey', 'rareSpark', 'payCoin']) stopSprite($(id));
-    $('payout').classList.remove('show');
-  }
-
-  function finish(won) {
-    if (won) {
-      const m = pickMonkey();
-      const r = RARITY[m.rarity];
-      const prize = MODES[mode].prize * r.mult;
-      money += prize; wins++;
-      lastWinTook = sinceWin; sinceWin = 0; streak = 0;
-      collection[m.id] = (collection[m.id] || 0) + 1;
-      store.set('lotto.collection', collection);
-
-      $('win').style.setProperty('--rc', r.color);
-      $('screen').classList.toggle('rare', m.rarity === 'rare');
-      $('winBadge').textContent = r.label.toUpperCase();
-      $('winName').textContent = m.name.toUpperCase();
-      const txt = $('winText');
-      txt.src = m.rarity === 'rare' ? TXT.rare : TXT.jackpot;
-      txt.alt = m.rarity === 'rare' ? 'RARE MONKEY!' : 'JACKPOT!';
-      const img = $('winImg');
-      const rare = m.rarity === 'rare';
-      img.hidden = rare; $('rareBox').hidden = !rare;
-      if (rare) {
-        // A10 reveal, then the A11 idle loop, with the A12 sparkle ring behind
-        play($('rareSpark'), 'sparkle', { fps: 10, loop: true });
-        play($('rareMonkey'), 'rare-reveal', { fps: 12, onEnd: () => play($('rareMonkey'), 'rare-idle', { fps: 4, loop: true }) });
-      } else {
-        img.src = m.src; img.alt = m.name;
-        restartAnim(img);
-      }
-      restartAnim(txt);
-      show('win');
-      // A6 siren, A7 coins pouring into the tray, A8 spinning coin on the payout
-      $('siren').hidden = false; play($('siren'), 'siren', { fps: 8, loop: true });
-      $('coins').hidden = false; play($('coins'), 'coins', { fps: 9 });
-      play($('payCoin'), 'coin', { fps: 12, loop: true });
-      $('payText').textContent = `+${shortMoney(prize)}`;
-      restartAnim($('payout'), 'show');
-      sfxWin(m.rarity);
-      celebrate(m.rarity);
-      restartAnim($('money'), 'bump');
-      renderCollection();
-    } else {
-      streak++; longest = Math.max(longest, streak);
-      // A4 slam frames, then the sharp FAIL text; A5 trombone droops in the corner
-      $('failImg').hidden = true;
-      const fa = $('failAnim'); fa.hidden = false;
-      play(fa, 'fail', { fps: 18, onEnd: () => setTimeout(() => { fa.hidden = true; $('failImg').hidden = false; }, 120) });
-      $('tromb').hidden = false; play($('tromb'), 'trombone', { fps: 5, loop: true });
-      show('fail');
-      sfxFail();
+  function finish(results, price) {
+    const wins = results.filter(r => r.won);
+    for (const r of results) {
+      if (r.won) continue;
+      if (r.refund) { S.money = round2(S.money + price); S.life.spent = round2(S.life.spent - price); toast('Wild Hair got your ticket refunded!'); }
+      if (r.lucky) toast('10 FAILs in a row… the machine feels warm. Odds ×2 for 5 tickets!');
     }
-    renderStats();
+    for (const w of wins) {
+      const c = col(w.m.id);
+      if (w.shiny) c.shiny++; else c.n++;
+      S.money = round2(S.money + w.prize); S.life.won = round2(S.life.won + w.prize);
+      S.run.wins++; S.life.wins++;
+      quest('win3'); if (S.mode === 'hard') quest('winHard'); if (w.shiny) quest('shiny');
+      if (w.guaranteed) toast('Banana Meter full: guaranteed monkey!');
+      if (w.party) toast('Party Chimp: double prize!');
+      if (w.shiny) toast(`SHINY ${w.m.name}! Worth 10× at the market`);
+    }
+    if (!S.albumBonus && albumDone()) { S.albumBonus = true; toast('Album complete! +10% prizes forever and the Gold Cabinet is unlocked in the SHOP'); }
+    if (wins.length) {
+      wins.sort((a, b) => RAR[b.m.rarity].rank - RAR[a.m.rarity].rank || b.shiny - a.shiny);
+      showWin(wins[0], wins.reduce((s, w) => s + w.prize, 0));
+      if (wins.length > 1) toast(`Also won: ${wins.slice(1).map(w => w.m.name).join(', ')}`);
+    } else showFail();
+    S.sinceOffer += results.length;
+    maybeOffer();
+    save(); renderAll();
     setButtonsDisabled(false);
     busy = false;
-    if (money < TICKET) setTimeout(gameOver, 1300);
+    if (S.money + 1e-9 < ticketPrice()) setTimeout(() => { if (S.money + 1e-9 < ticketPrice()) gameOver(); }, 1300);
   }
 
+  function showWin(w, total) {
+    const m = w.m, r = RAR[m.rarity];
+    const win = $('win');
+    win.style.setProperty('--rc', w.shiny ? 'var(--gold)' : r.color);
+    win.classList.toggle('legendary', m.rarity === 'legendary');
+    const img = $('winImg');
+    img.src = m.src; img.alt = m.name; img.style.objectPosition = m.pos;
+    restartAnim(img);
+    const isSidney = m.id === 'sidney';
+    $('winBig').hidden = !isSidney;
+    $('winText').hidden = isSidney; $('winBadge').hidden = isSidney; $('winName').hidden = isSidney;
+    if (isSidney) restartAnim($('winBig'));
+    else {
+      const txt = $('winText');
+      txt.src = r.rank >= 2 ? TXT.rare : TXT.jackpot;
+      txt.alt = r.rank >= 2 ? 'RARE MONKEY!' : 'JACKPOT!';
+      restartAnim(txt);
+      $('winBadge').textContent = (w.shiny ? 'SHINY ' : '') + r.label.toUpperCase();
+      $('winName').textContent = m.name.toUpperCase();
+    }
+    const sparkle = r.rank >= 2 || w.shiny;
+    $('screen').classList.toggle('glow', sparkle);
+    $('winSpark').hidden = !sparkle;
+    if (sparkle) play($('winSpark'), 'sparkle', { fps: 10, loop: true });
+    show('win');
+    $('siren').hidden = false; play($('siren'), 'siren', { fps: 8, loop: true });
+    $('coins').hidden = false; play($('coins'), 'coins', { fps: 9 });
+    play($('payCoin'), 'coin', { fps: 12, loop: true });
+    $('payText').textContent = `+${shortMoney(total)}`;
+    restartAnim($('payout'), 'show');
+    restartAnim($('money'), 'bump');
+    sfxWin(w.shiny && r.rank < 2 ? 'rare' : m.rarity);
+    celebrate(w.shiny && r.rank < 2 ? 'rare' : m.rarity);
+  }
+
+  function showFail() {
+    restartAnim($('failImg'));
+    show('fail');
+    $('tromb').hidden = false; play($('tromb'), 'trombone', { fps: 5, loop: true });
+    sfxFail();
+  }
+
+  // ================= Broke screen =================
+  let overTimer = null;
+  function renderOver() {
+    const left = S.freeAt - Date.now();
+    const fb = $('freeBtn');
+    fb.disabled = left > 0;
+    fb.textContent = left > 0 ? `FREE $10 IN ${Math.floor(left / 60000)}:${String(Math.ceil(left / 1000) % 60).padStart(2, '0')}` : 'FREE $10';
+    $('sellBtn').hidden = !MONKEYS.some(m => canSell(m.id, false) || canSell(m.id, true));
+  }
   function gameOver() {
-    $('overText').innerHTML =
-      `You bought <b>${fmt(tickets)}</b> ticket${tickets === 1 ? '' : 's'} and won <b>${fmt(wins)}</b> monkey${wins === 1 ? '' : 's'}. ` +
-      `Your longest losing streak was <b>${fmt(longest)}</b>.`;
+    $('overText').innerHTML = `You have <b>${money$(S.money)}</b> and a ticket costs <b>${money$(ticketPrice())}</b>. ` +
+      `This run: <b>${fmt(S.run.tickets)}</b> tickets, <b>${fmt(S.run.wins)}</b> monkeys.`;
+    renderOver();
     $('over').hidden = false;
     play($('wallet'), 'wallet', { fps: 6 });
-    $('again').focus();
+    clearInterval(overTimer); overTimer = setInterval(renderOver, 500);
+    $('freeBtn').focus();
   }
-  $('again').addEventListener('click', () => {
-    resetRun();
-    clearResultFx();
-    $('over').hidden = true;
-    show('prompt');
-    renderStats();
-    $('machine').focus();
+  function closeOver() { $('over').hidden = true; clearInterval(overTimer); }
+  $('freeBtn').addEventListener('click', () => {
+    if (Date.now() < S.freeAt) return;
+    S.money = round2(S.money + 10); S.freeAt = Date.now() + FREE_COOLDOWN;
+    sfxCash(); save(); closeOver(); show('prompt'); clearResultFx(); renderAll();
   });
+  $('sellBtn').addEventListener('click', () => { closeOver(); tab = 'market'; renderTab(); $('tabBody').closest('.panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
+  $('closeOver').addEventListener('click', closeOver);
 
-  // Tap anywhere (except the buttons and side panels) to play.
+  // Tap anywhere (except buttons, panels and popups) to play.
   document.addEventListener('click', (e) => {
-    if (e.target.closest('button, .panel, #over')) return;
+    if (e.target.closest('button, select, .panel, #over, #offer, #toasts')) return;
     buyTicket();
   });
   document.addEventListener('keydown', (e) => {
-    if ((e.key === ' ' || e.key === 'Enter') && !e.target.closest('button')) {
-      e.preventDefault();
-      buyTicket();
-    }
+    if ((e.key === ' ' || e.key === 'Enter') && !e.target.closest('button, select')) { e.preventDefault(); buyTicket(); }
   });
 
-  // Idle sprites: lever at rest, light-bulb sign, payout coin, ambient casino loops
-  setSprite($('lever'), 'lever', 0);
+  // Auto-lever and zoo income
+  setInterval(() => {
+    if (S.up.auto && S.up.autoOn && !busy && $('over').hidden && S.money + 1e-9 >= ticketPrice()) buyTicket();
+  }, 2500);
+  setInterval(() => {
+    if (!S.zoo.length) { S.zooLast = Date.now(); return; }
+    collectZoo(true); renderMachine(); if (tab === 'zoo' || tab === 'shop' || tab === 'retire') renderTab(); save();
+  }, 5000);
+
+  // ================= Start =================
   setSprite($('payCoin'), 'coin', 0);
   play($('sign'), 'lights', { fps: 5, loop: true });
-  for (const el of document.querySelectorAll('#bgbox .amb')) {
-    play(el, el.dataset.sprite, { fps: +el.dataset.fps, loop: true, offset: Math.random() * 1000 });
-  }
-
+  for (const el of document.querySelectorAll('#bgbox .amb')) play(el, el.dataset.sprite, { fps: +el.dataset.fps, loop: true, offset: Math.random() * 1000 });
+  ensureQuests();
+  collectZoo(false);
+  save();
   renderAudioButtons();
-  renderOdds();
-  renderStats();
-  renderCollection();
+  renderAll();
 })();
 </script>
 </body>

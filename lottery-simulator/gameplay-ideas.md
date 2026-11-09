@@ -1,5 +1,7 @@
 # Lottery Simulator: making monkeys reachable, and new gameplay loops
 
+> **Status:** everything below is now in the game (`index.html`). Since this was written the album grew to 9: three new monkeys (Red Lips, Party Chimp, Too Cool) and a legendary, Sidney. Perks for the new ones: Red Lips +10% prizes, Party Chimp 12.5% of wins pay double, Too Cool +20% sell prices, Sidney makes the Banana Meter fill twice as fast. Progress is saved in the browser.
+
 ## Why monkeys are hard to get right now
 
 On Normal you start with $20 and each $1 ticket has a 1 in 20 chance. Without a single win you're broke after 20 tickets, and that happens about 36% of the time. A win gives a *random* monkey, so the same common one comes back again and again: the rare Selfie Grin is 1 in 400 tickets. Collecting all five takes a few hundred tickets, but a run usually ends after 20–60.
