@@ -102,6 +102,15 @@
   .sbtn[aria-pressed="false"] .off { display: block; }
   button:focus-visible, select:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 
+  /* Test mode switch (top-left) */
+  #testBtn {
+    position: fixed; z-index: 25;
+    top: calc(14px + env(safe-area-inset-top, 0px));
+    left: max(12px, env(safe-area-inset-left, 0px));
+    font-size: 10px; padding: 9px 10px;
+  }
+  #testBtn[aria-pressed="true"] { background: var(--pink); color: #fff; box-shadow: inset 0 -3px 0 #8a1a5a; }
+
   /* Three-column table: stats | machine | tabs */
   .table {
     width: 100%;
@@ -402,7 +411,7 @@
     .tabs { grid-template-columns: repeat(6, minmax(0, 1fr)); }
     #tabBody { max-height: none; }
     .title { width: min(78vw, 380px); }
-    .audio { position: absolute; }
+    .audio, #testBtn { position: absolute; }
   }
   @media (max-width: 520px) {
     .plaques { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -430,6 +439,8 @@
     <div class="amb spr" data-sprite="patron" data-fps="4" style="left:66.7%;top:34.6%;width:3.9%"></div>
   </div>
 </div>
+
+<button class="pbtn alt" id="testBtn" type="button" aria-pressed="false" title="Every pull wins, showing each monkey in turn. Nothing is saved.">TEST: OFF</button>
 
 <div class="audio">
   <button class="sbtn" id="musicBtn" type="button" aria-pressed="true" aria-label="Music">
@@ -860,13 +871,16 @@
     $('mqOdds').textContent = `1 IN ${fmt(1 / p)}`;
     $('mqOdds').style.fontSize = 1 / p > 1e6 ? '2.4cqw' : '';
     const mq = $('mqPrize');
-    if (S.lucky > 0 && S.mode !== 'real') { mq.textContent = `LUCKY ×2 · ${S.lucky} LEFT`; mq.className = 'lucky'; }
+    if (testOn) { $('mqOdds').textContent = 'TEST MODE'; $('mqOdds').style.fontSize = ''; mq.textContent = `NEXT: ${MONKEYS[testIdx].name.toUpperCase()}`; mq.className = 'lucky'; }
+    else if (S.lucky > 0 && S.mode !== 'real') { mq.textContent = `LUCKY ×2 · ${S.lucky} LEFT`; mq.className = 'lucky'; }
     else { mq.textContent = `PRIZE ${shortMoney(prizeFor(MONKEYS[0]))}+`; mq.className = ''; }
     for (const b of dbtns) b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode));
     const price = ticketPrice();
     const count = S.up.triple && S.up.tripleOn ? 3 : 1;
     $('slotHint').textContent = (count > 1 ? '3×' : '') + money$(price);
-    $('signSmall').textContent = `OR TAP ANYWHERE · ${count > 1 ? '3× ' : ''}${money$(price)}`;
+    $('signSmall').textContent = testOn ? 'TEST MODE · EVERY PULL WINS' : `OR TAP ANYWHERE · ${count > 1 ? '3× ' : ''}${money$(price)}`;
+    $('testBtn').setAttribute('aria-pressed', String(testOn));
+    $('testBtn').textContent = testOn ? 'TEST: ON' : 'TEST: OFF';
     $('money').textContent = shortMoney(S.money);
     $('machine').classList.toggle('gold', !!S.up.skinOn);
   }
@@ -1260,6 +1274,40 @@
 
   // ================= Playing =================
   let busy = false;
+  // Test mode: every pull wins, going through MONKEYS from common to legendary, then starting over.
+  // It only plays the jackpot show; money, album, stats and quests are left untouched.
+  let testOn = false, testIdx = 0;
+  $('testBtn').addEventListener('click', () => {
+    if (busy) return;
+    testOn = !testOn; testIdx = 0;
+    ensureAudio(); sfxClick();
+    toast(testOn ? 'Test mode ON: every pull wins, in rarity order. Nothing is saved.' : 'Test mode OFF');
+    renderMachine();
+  });
+  function testPull() {
+    busy = true;
+    const m = MONKEYS[testIdx];
+    testIdx = (testIdx + 1) % MONKEYS.length;
+    setButtonsDisabled(true); clearResultFx();
+    restartAnim($('lever'), 'pull'); sfxLever();
+    const reels = [...document.querySelectorAll('.reel')];
+    setTimeout(() => {
+      show('drawing');
+      reels.forEach((r, i) => { r.classList.remove('stopped', 'lost'); play(r, 'reel-spin', { fps: 16, loop: true, offset: i * 70 }); });
+      $('ball').textContent = 'TEST SPIN';
+      setTimeout(() => {
+        $('ball').textContent = '★ WINNER ★';
+        reels.forEach((r, i) => setTimeout(() => { play(r, 'reel-stop', { fps: 20 }); restartAnim(r, 'stopped'); sfxReelStop(); }, i * 170));
+        setTimeout(() => {
+          showWin({ m, shiny: false }, prizeFor(m));
+          if (testIdx === 0) toast('That was all 9! The next pull starts the list over.');
+          renderMachine();
+          setButtonsDisabled(false);
+          busy = false;
+        }, 660);
+      }, 850);
+    }, 300);
+  }
   function restartAnim(el, cls) {
     if (cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); return; }
     el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
@@ -1309,6 +1357,7 @@
   function buyTicket() {
     if (busy || !$('over').hidden) return;
     ensureAudio();
+    if (testOn) { testPull(); return; }
     const price = ticketPrice();
     if (S.money + 1e-9 < price) { gameOver(); return; }
     let count = S.up.triple && S.up.tripleOn ? 3 : 1;
@@ -1454,7 +1503,7 @@
 
   // Auto-lever and zoo income
   setInterval(() => {
-    if (S.up.auto && S.up.autoOn && !busy && $('over').hidden && S.money + 1e-9 >= ticketPrice()) buyTicket();
+    if (!testOn && S.up.auto && S.up.autoOn && !busy && $('over').hidden && S.money + 1e-9 >= ticketPrice()) buyTicket();
   }, 2500);
   setInterval(() => {
     if (!S.zoo.length) { S.zooLast = Date.now(); return; }
