@@ -1,0 +1,97 @@
+I'm making art for a browser game called "Lottery Simulator". Please create every image listed below, following the style guide exactly. Make them one at a time in the order listed (T1 first). After each image, tell me which asset ID you just made and which one is next, then continue when I say "next".
+
+=== THE GAME ===
+The player sits in front of a slot machine in a busy casino. Each tap buys a $1 ticket. Almost every time the machine shows a huge red "FAIL". Rarely it pays out and shows a happy monkey. There are 5 collectible monkeys; one, a grinning black crested macaque, is rare.
+
+=== CAMERA AND LAYOUT ===
+First-person view: we are seated on a stool facing a slot machine. The slot machine cabinet fills the middle of the screen and most of its height. Its glass screen is where the game happens. The casino floor stretches out behind and around the machine: rows of other slot machines, card tables, chandeliers, neon signs, red patterned carpet and patrons seen as silhouettes. Wide 16:9 framing.
+
+=== ART STYLE (applies to every image) ===
+- 16-bit console pixel art, like a mid-1990s SNES / Sega Genesis game.
+- Native resolution of 384x216 pixels, scaled up with hard nearest-neighbour edges so every pixel is a crisp square block. No anti-aliasing, no blur, no smooth gradients (dithering only), no painterly texture.
+- Limited palette, about 32 colours per image. Dark outlines (deep purple or near-black, not pure black) around objects.
+- Light comes from the slot machine and neon signs: warm gold and red highlights, deep purple and navy shadows.
+- Palette anchors: casino carpet deep red #7A1028 with gold #FFCF33 pattern; walls and shadows navy #141433 and purple #2A1A4A; chrome #C8D0E0 to #6A7090; neon pink #FF4FA8 and cyan #3FE0FF; jackpot gold #FFCF33; FAIL red #FF2424; money green #63D47F.
+- Fun and cartoony, not seedy. No real casino names, logos or brands. No readable text unless an asset asks for it, and any requested text must be spelled exactly as written.
+
+=== SPRITE SHEET RULES (for every animation) ===
+Draw all frames in one image as a single horizontal row, left to right, every frame the same size, evenly spaced, with the object in the same position in each frame so the frames line up. Transparent background (or flat #FF00FF magenta if transparency isn't possible). No frame numbers, borders or labels.
+
+=== TEXTURES AND STILL IMAGES ===
+
+T1. CASINO BACKGROUND (16:9, no slot machine in the foreground; the player's machine is drawn separately on top)
+A wide view of a lively casino floor seen from a seated height. Rows of slot machines with glowing screens recede into the distance on the left and right. In the middle distance, a roulette table and a card table with a dealer, as small sprites. Crystal chandeliers hang from a dark ceiling. Neon signs in pink and cyan on the back wall (shapes only: stars, cherries, a horseshoe, a banana; no words). Red and gold patterned carpet. A few patrons as dark purple silhouettes. Keep the centre slightly darker and less busy, because the player's slot machine will cover it.
+
+T2. SLOT MACHINE CABINET (front view, transparent background, about 3:4)
+A chunky retro slot machine. Chrome and red body with gold trim. At the top, a light-up marquee box with a row of round bulbs around its edge and a blank space in the middle for a title. In the middle, one large empty screen window filled with flat #FF00FF magenta (a clean rectangle, no reflections; the game draws into it). Below the screen: a control deck with an empty panel for buttons, a coin slot and a small empty LED display panel. At the bottom, a coin tray. On the right side, a big pull lever with a red ball on top, in the UP position. A banana-and-monkey motif engraved in the gold trim.
+
+T3. MARQUEE TITLE SIGN (wide banner about 4:1, transparent background)
+The words "LOTTERY SIMULATOR" in big chunky arcade letters, gold with a dark orange drop shadow and a thin dark outline, on a dark red panel framed by a row of round light bulbs. Spell exactly: LOTTERY SIMULATOR.
+
+T4. BUTTONS (one sheet, transparent background)
+A grid of chunky square arcade push-buttons, each shown in two states side by side: UP (raised, lit) and PRESSED (pushed in, darker). Rows: 1) "EASY" green; 2) "NORMAL" yellow; 3) "HARD" orange; 4) "REAL" red; 5) Music button with a music-note icon, plus a third dimmed version with a slash through the note (muted); 6) Sound button with a speaker icon, plus a third dimmed version with a slash (muted). Spell words exactly. Equal spacing.
+
+T5. DISPLAY PANELS (one sheet, transparent background)
+1) A wide LED money display: black glass, green glowing 7-segment digits showing "$20". 2) The same display with no digits. 3) Four small brass stat plaques with dark recessed centres, empty. 4) A long thin brass plate, empty, for a one-line message.
+
+T6. RESULT TEXT (one sheet, transparent background, chunky arcade lettering with thick dark outlines)
+1) "FAIL" in huge bright red #FF2424 letters with a dark red 3D drop and a dithered red glow. 2) "JACKPOT!" in gold #FFCF33 with orange shading and white sparkle pixels. 3) "RARE MONKEY!" in gold with a rainbow shimmer outline. 4) "BROKE!" in red with a cracked look. Spell every word exactly.
+
+T7. COLLECTION CARD FRAMES (one sheet, transparent background, all the same size, portrait about 3:4)
+1) COMMON: silver-grey border. 2) UNCOMMON: blue border with small gem studs in the corners. 3) RARE: gold border with gems and little sparkles. 4) LOCKED: dark card with a big pixel "?" in the middle and a padlock. Each frame has an empty square window at the top for a portrait and an empty strip at the bottom for a name. No text.
+
+T8. MONKEY PORTRAITS (5 separate square images, transparent background, head and shoulders filling the square, cute and happy, recognisable but fully redrawn as 16-bit pixel art)
+T8a. Finger Hugger (common): a tiny grey pygmy marmoset with big round dark eyes hugging a human finger, black striped tail curled underneath.
+T8b. Pocket Marmoset (common): a tiny grey pygmy marmoset clinging to a fingertip, looking at the camera.
+T8c. Big Nose (uncommon): a proboscis monkey in side profile, orange fur, a huge droopy pink nose and a little smile.
+T8d. Wild Hair (uncommon): a scruffy baby marmoset with wild sticking-up tan hair and big shiny black eyes, sitting in a hand.
+T8e. Selfie Grin (RARE): a black crested macaque with amber eyes and a huge toothy grin, looking straight at us as if taking a selfie, with a subtle gold glow around the edge.
+
+=== ANIMATION SPRITE SHEETS ===
+
+A1. LEVER PULL (8 frames)
+The slot machine's pull lever from T2, by itself. 1) lever up at rest; 2-4) swings down in an arc; 5) fully down with a small white impact spark; 6-7) springs back up and overshoots slightly; 8) back at rest.
+
+A2. SPINNING REELS (two rows in one image)
+One slot reel strip (a vertical window showing about 3 symbols). Symbols: banana, cherry, gold coin, monkey face, red X. Row 1, SPIN LOOP, 4 frames: spinning fast, symbols smeared into vertical pixel speed lines. Row 2, STOP, 6 frames: slows down, overshoots, bounces back and lands with one symbol centred.
+
+A3. MARQUEE LIGHTS (4 frames, loop)
+The light-bulb border from T3 with no text inside. Every 4th bulb is lit gold and the others are dim, shifting one bulb clockwise per frame so it loops smoothly.
+
+A4. FAIL SLAM (6 frames)
+The red "FAIL" text from T6 slamming onto the screen. 1) huge and dithered semi-transparent; 2) smaller; 3) squashed flat on impact with a burst of red pixel dust; 4) stretched tall; 5) settling; 6) at rest, normal size.
+
+A5. SAD TROMBONE (4 frames, loop, about 32x32 per frame)
+A tiny droopy, sad brass trombone, slide pushing out and back, with little musical notes drooping downward.
+
+A6. JACKPOT SIREN LIGHT (4 frames, loop)
+A rotating beacon light that sits on top of the slot machine: gold dome with a light beam sweeping around, flashing red, gold, pink and cyan.
+
+A7. COINS POURING (8 frames, loop)
+The slot machine's coin tray from the front with a stream of gold coins pouring into it from a chute above, the pile growing a little each frame, coins bouncing and glinting.
+
+A8. SPINNING COIN (6 frames, loop, about 16x16 per frame)
+A gold coin with a banana stamped on it, spinning: face-on, three-quarter, edge-on, three-quarter back, back face, three-quarter.
+
+A9. PARTICLES (three rows, about 16x16 per frame)
+Row 1: a cartoon banana tumbling, 6 frames through a full spin. Row 2: a gold confetti piece fluttering, 4 frames (flat, tilted, edge-on, tilted). Row 3: the same 4 confetti frames in pink, cyan and green versions side by side.
+
+A10. MONKEY REVEAL (8 frames; one sheet for each of the 5 monkeys from T8)
+The monkey pops up into the slot machine screen: 1) just the top of its head peeking up from the bottom; 2-3) rising fast; 4) jumping past its rest position, stretched; 5) squashed as it lands; 6) bounce; 7) settling; 8) at rest, smiling, with two sparkle pixels near its eyes.
+
+A11. MONKEY HAPPY IDLE (4 frames, loop; one sheet for each of the 5 monkeys)
+Tilts its head left, back to centre, tilts right, back to centre, with a blink in one frame.
+
+A12. RARE MONKEY SPARKLE (6 frames, loop, overlay)
+A ring of gold and white 4-point pixel star sparkles twinkling on and off around an empty square space, plus a soft dithered gold aura pulsing brighter and dimmer.
+
+A13. BROKE WALLET (8 frames)
+A brown leather wallet: 1) closed; 2-3) flips open; 4) shows it's empty; 5-7) a little moth flutters out and flies up; 8) the wallet hangs open and limp.
+
+A14. CASINO AMBIENCE (four rows, each a loop)
+Row 1, 3 frames: a pink neon banana sign flickering (on, half-on, off). Row 2, 4 frames: a small far-away slot machine with its screen blinking colours. Row 3, 4 frames: a dark purple patron silhouette sitting at a slot machine, pulling its lever. Row 4, 4 frames: chandelier crystals twinkling.
+
+A15. BUTTON PRESS GLOW (2 frames)
+A soft gold pixel glow ring around a square arcade button: frame 1 bright and tight, frame 2 wider and fading.
+
+Start now with T1.
