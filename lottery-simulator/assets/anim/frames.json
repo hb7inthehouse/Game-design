@@ -1,0 +1,107 @@
+{
+ "lever": {
+  "frames": 8,
+  "w": 140,
+  "h": 147
+ },
+ "reel-spin": {
+  "frames": 4,
+  "w": 82,
+  "h": 88
+ },
+ "reel-stop": {
+  "frames": 6,
+  "w": 88,
+  "h": 90
+ },
+ "lights": {
+  "frames": 4,
+  "w": 171,
+  "h": 84
+ },
+ "fail": {
+  "frames": 6,
+  "w": 140,
+  "h": 109
+ },
+ "trombone": {
+  "frames": 4,
+  "w": 175,
+  "h": 81
+ },
+ "siren": {
+  "frames": 4,
+  "w": 147,
+  "h": 94
+ },
+ "coins": {
+  "frames": 8,
+  "w": 107,
+  "h": 101
+ },
+ "coin": {
+  "frames": 6,
+  "w": 90,
+  "h": 89
+ },
+ "banana": {
+  "frames": 6,
+  "w": 65,
+  "h": 61
+ },
+ "confetti-gold": {
+  "frames": 4,
+  "w": 40,
+  "h": 38
+ },
+ "confetti-color": {
+  "frames": 9,
+  "w": 37,
+  "h": 36
+ },
+ "rare-reveal": {
+  "frames": 8,
+  "w": 133,
+  "h": 109
+ },
+ "rare-idle": {
+  "frames": 4,
+  "w": 88,
+  "h": 83
+ },
+ "sparkle": {
+  "frames": 6,
+  "w": 101,
+  "h": 84
+ },
+ "wallet": {
+  "frames": 8,
+  "w": 99,
+  "h": 156
+ },
+ "neon": {
+  "frames": 3,
+  "w": 118,
+  "h": 44
+ },
+ "mini-slot": {
+  "frames": 4,
+  "w": 50,
+  "h": 56
+ },
+ "patron": {
+  "frames": 4,
+  "w": 65,
+  "h": 53
+ },
+ "chandelier": {
+  "frames": 4,
+  "w": 62,
+  "h": 50
+ },
+ "glow": {
+  "frames": 2,
+  "w": 140,
+  "h": 138
+ }
+}
