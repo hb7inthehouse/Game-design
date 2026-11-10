@@ -131,7 +131,8 @@ export class NameScene implements Scene {
   }
 
   onEnter(): void {
-    const last = localStorage.getItem('eds.name') ?? 'Sam';
+    let last = 'Sam';
+    try { last = localStorage.getItem('eds.name') ?? 'Sam'; } catch { /* storage blocked */ }
     this.input.value = last;
     this.input.addEventListener('keydown', this.onKey);
     this.input.focus();
