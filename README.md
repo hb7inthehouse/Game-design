@@ -84,3 +84,7 @@ Sprites are cut from the move sheets into `assets/fight-him.png` and `assets/fig
 - **Dude** (`assets/dog-extra.png`): walks toward and away from you on the leash in the yard, wags his tail while he waits, jumps up to greet you when you get home from Walmart, and plays with the squeaky toy once you've brought it home.
 - **Shopping cart** (`assets/cart.png`): in Walmart they push a cart together instead of holding hands: grabbing it at the door, pushing it in all four directions, standing with it, resting on it or leaning while you wait, and chatting over it.
 - **Bedtime** (`assets/bed.png`): "Ready for bed?" in the talk menu, then pick cuddling up, holding hands, or just sleeping. The lights go down in the bedroom, they lie down, say goodnight, and sleep (with Dude at the foot of the bed and Zzz floating up). Press E (WAKE UP) and they stir awake into the morning.
+
+## Also in this repo: The Elevator Doesn't Stop
+
+`elevator/` holds a separate game, a short psychological horror game about a night-shift elevator operator (TypeScript + Vite + Canvas). See [`elevator/README.md`](elevator/README.md) to run it.
