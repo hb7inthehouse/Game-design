@@ -22,15 +22,27 @@ export class App {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.ctx.imageSmoothingEnabled = false;
     Input.attach(canvas);
-    window.addEventListener('resize', () => this.resize());
+    const refit = () => {
+      this.resize();
+      // Some phones report the new size a moment after rotating.
+      window.setTimeout(() => this.resize(), 250);
+    };
+    window.addEventListener('resize', refit);
+    window.addEventListener('orientationchange', refit);
+    window.visualViewport?.addEventListener('resize', refit);
+    document.addEventListener('fullscreenchange', refit);
     this.resize();
   }
 
   resize(): void {
-    const vw = window.innerWidth, vh = window.innerHeight;
-    let scale = Math.floor(Math.min(vw / W, vh / H));
-    if (scale < 1) scale = Math.min(vw / W, vh / H);
-    const cw = Math.round(W * scale), ch = Math.round(H * scale);
+    const vv = window.visualViewport;
+    const vw = vv ? vv.width : window.innerWidth;
+    const vh = vv ? vv.height : window.innerHeight;
+    const fit = Math.min(vw / W, vh / H);
+    // Whole-number scaling keeps pixels perfectly even on big screens; on phones
+    // (where that would leave the game tiny) fill the screen instead.
+    const scale = fit >= 3 ? Math.floor(fit) : fit;
+    const cw = Math.floor(W * scale), ch = Math.floor(H * scale);
     this.canvas.style.width = `${cw}px`;
     this.canvas.style.height = `${ch}px`;
     const crt = document.getElementById('crt');
